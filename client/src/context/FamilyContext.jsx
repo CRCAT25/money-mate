@@ -18,6 +18,8 @@ export function FamilyProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const syncState = useRef(null);
   const syncRequest = useRef(null);
+  const pendingLocalTransactions = useRef(0);
+  const pageCache = useRef(new Map());
 
   const reloadBaseData = useCallback(async () => {
     if (!user) return;
@@ -27,6 +29,7 @@ export function FamilyProvider({ children }) {
     ]);
     setFamilyDetails(familyResponse.data);
     setCategories(categoriesResponse.data);
+    pageCache.current.clear();
     if (familyResponse.data.revisions) syncState.current = familyResponse.data.revisions;
     setLoading(false);
   }, [user]);
@@ -41,7 +44,11 @@ export function FamilyProvider({ children }) {
       if (!previous) return;
 
       const baseChanged = data.baseRevision !== previous.baseRevision;
-      const transactionsChanged = data.transactionsRevision !== previous.transactionsRevision;
+      const transactionDelta = Math.max(0, data.transactionsRevision - previous.transactionsRevision);
+      const localTransactions = Math.min(transactionDelta, pendingLocalTransactions.current);
+      pendingLocalTransactions.current -= localTransactions;
+      const transactionsChanged = transactionDelta > localTransactions;
+      if (baseChanged || transactionsChanged) pageCache.current.clear();
       if (baseChanged) await reloadBaseData();
       if (baseChanged || transactionsChanged) setRevision((value) => value + 1);
     }).finally(() => {
@@ -56,6 +63,8 @@ export function FamilyProvider({ children }) {
       setFamilyDetails(null);
       setCategories([]);
       syncState.current = null;
+      pendingLocalTransactions.current = 0;
+      pageCache.current.clear();
       setLoading(false);
       return;
     }
@@ -64,7 +73,28 @@ export function FamilyProvider({ children }) {
       setLoading(false);
       notify(errorMessage(error), 'error');
     });
-  }, [user, pathname, reloadBaseData, notify]);
+  }, [user, reloadBaseData, notify]);
+
+  useEffect(() => {
+    if (!user || !syncState.current) return;
+    checkForChanges().catch(() => {});
+  }, [pathname, user, checkForChanges]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    let timeout;
+    const handleApiActivity = () => {
+      window.clearTimeout(timeout);
+      timeout = window.setTimeout(() => {
+        if (syncState.current) checkForChanges().catch(() => {});
+      }, 120);
+    };
+    window.addEventListener('moneymate:api-activity', handleApiActivity);
+    return () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener('moneymate:api-activity', handleApiActivity);
+    };
+  }, [user, checkForChanges]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -82,12 +112,16 @@ export function FamilyProvider({ children }) {
     return undefined;
   }, [user, checkForChanges]);
 
-  // Local mutations already know the data changed; update dependent pages without
-  // an extra sync request, while socket events still use revision checks.
-  const touch = useCallback(() => setRevision((value) => value + 1), []);
+  const getCache = useCallback((key) => pageCache.current.get(key), []);
+  const setCache = useCallback((key, value) => pageCache.current.set(key, value), []);
+  const touch = useCallback(() => {
+    pendingLocalTransactions.current += 1;
+    pageCache.current.clear();
+    setRevision((value) => value + 1);
+  }, []);
   const value = useMemo(
-    () => ({ familyDetails, categories, revision, loading, reloadBaseData, touch }),
-    [familyDetails, categories, revision, loading, reloadBaseData, touch],
+    () => ({ familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache }),
+    [familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache],
   );
   return <FamilyContext.Provider value={value}>{children}</FamilyContext.Provider>;
 }

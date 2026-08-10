@@ -12,7 +12,7 @@ import { compactMoney, currentMonth, formatMoney } from '../utils/formatters.js'
 
 export default function Reports() {
   const { family } = useAuth();
-  const { categories, familyDetails, revision, touch, loading: baseLoading } = useFamilyData();
+  const { categories, familyDetails, revision, touch, loading: baseLoading, getCache, setCache } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
   const [type, setType] = useState('expense');
@@ -22,6 +22,14 @@ export default function Reports() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const cacheKey = `reports:${month}:${memberId}:${categoryId}`;
+    const cached = getCache(cacheKey);
+    if (cached?.revision === revision) {
+      setData(cached.data);
+      setLoading(false);
+      return undefined;
+    }
+
     let active = true; setLoading(true);
     const transactionParams = { month, limit: 200 };
     if (categoryId) transactionParams.categoryId = categoryId;
@@ -32,11 +40,16 @@ export default function Reports() {
       api.get('/reports/summary', { params: summaryParams }),
       api.get('/reports/trend', { params: { endMonth: month, months: 6 } }),
       api.get('/transactions', { params: transactionParams }),
-    ]).then(([summary, trend, transactions]) => active && setData({ summary: summary.data, trend: trend.data, transactions: transactions.data }))
+    ]).then(([summary, trend, transactions]) => {
+      if (!active) return;
+      const nextData = { summary: summary.data, trend: trend.data, transactions: transactions.data };
+      setData(nextData);
+      setCache(cacheKey, { data: nextData, revision });
+    })
       .catch((error) => notify(errorMessage(error), 'error'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [month, memberId, categoryId, revision, notify]);
+  }, [month, memberId, categoryId, revision, notify, getCache, setCache]);
 
   const chartCategories = useMemo(() => data.summary?.categories.filter((item) => item.type === type) || [], [data.summary, type]);
   const trend = data.trend.map((item) => ({ ...item, label: `T${Number(item.month.slice(5))}` }));

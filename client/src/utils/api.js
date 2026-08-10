@@ -14,8 +14,17 @@ api.interceptors.request.use((request) => {
 
 let refreshPromise;
 
+function announceApiActivity(config) {
+  const url = config?.url || '';
+  if (url.includes('/family/sync') || url.includes('/auth/')) return;
+  window.dispatchEvent(new Event('moneymate:api-activity'));
+}
+
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    announceApiActivity(response.config);
+    return response;
+  },
   async (error) => {
     const original = error.config;
     if (error.response?.status !== 401 || original?._retry || original?.url?.includes('/auth/refresh')) {

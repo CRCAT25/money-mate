@@ -14,7 +14,7 @@ const weekDays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
 export default function Home() {
   const { family } = useAuth();
-  const { revision } = useFamilyData();
+  const { revision, getCache, setCache } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
   const [summary, setSummary] = useState(null);
@@ -22,6 +22,15 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const cacheKey = `home:${month}`;
+    const cached = getCache(cacheKey);
+    if (cached?.revision === revision) {
+      setSummary(cached.summary);
+      setTransactions(cached.transactions);
+      setLoading(false);
+      return undefined;
+    }
+
     let active = true;
     setLoading(true);
     Promise.all([
@@ -29,12 +38,14 @@ export default function Home() {
       api.get('/transactions', { params: { month, limit: 200 } }),
     ]).then(([summaryResponse, transactionResponse]) => {
       if (!active) return;
-      setSummary(summaryResponse.data);
-      setTransactions(transactionResponse.data);
+      const nextData = { summary: summaryResponse.data, transactions: transactionResponse.data };
+      setSummary(nextData.summary);
+      setTransactions(nextData.transactions);
+      setCache(cacheKey, { ...nextData, revision });
     }).catch((error) => active && notify(errorMessage(error), 'error'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [month, revision, notify]);
+  }, [month, revision, notify, getCache, setCache]);
 
   const dailyExpenses = useMemo(() => transactions.reduce((totals, transaction) => {
     if (transaction.type === 'expense') {
@@ -45,8 +56,8 @@ export default function Home() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div className="fixed inset-x-0 top-[env(safe-area-inset-top)] z-30 flex h-12 items-center justify-center border-b border-ink/[0.05] bg-cream/90 px-4 backdrop-blur-xl lg:static lg:h-auto lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
-        <MonthPicker value={month} onChange={setMonth} dense />
+      <div className="fixed inset-x-0 top-[env(safe-area-inset-top)] z-30 flex h-12 items-center justify-center bg-cream/90 backdrop-blur-xl lg:static lg:h-auto lg:bg-transparent lg:backdrop-blur-none">
+        <MonthPicker value={month} onChange={setMonth} dense fullWidth />
       </div>
 
       <section className="overflow-hidden rounded-[28px] border border-ink/[0.07] bg-paper/90 shadow-card">

@@ -57,16 +57,6 @@ export default function AppShell({ children }) {
       </aside>
 
       <div className="min-w-0 lg:col-start-2">
-        <header className={`${isHome ? 'hidden' : 'flex'} sticky top-0 z-30 h-[72px] items-center justify-between border-b border-ink/[0.06] bg-cream/85 px-4 backdrop-blur-xl sm:px-7 lg:hidden`}>
-          <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-[14px] bg-ink font-editorial text-xl font-bold text-white">M</div>
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.15em] text-ink/40">Gia đình</div>
-              <div className="max-w-48 truncate text-sm font-extrabold text-ink">{family?.name}</div>
-            </div>
-          </div>
-          <Avatar user={user} />
-        </header>
         <main className={`mx-auto min-h-screen max-w-[1440px] px-4 pb-28 sm:px-7 lg:px-10 lg:pb-12 lg:pt-9 xl:px-14 ${isHome ? 'pt-16' : 'pt-6'}`}>
           <div key={location.pathname} className={isHome ? '' : 'animate-fade-in'}>
             {children}
