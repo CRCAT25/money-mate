@@ -20,19 +20,35 @@
 }
 
 html {
+  width: 100%;
+  max-width: 100%;
   min-width: 320px;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  scrollbar-width: none;
+  touch-action: pan-x pan-y;
   background: #17362f;
 }
 
 body {
   margin: 0;
+  width: 100%;
+  max-width: 100%;
   min-width: 320px;
   min-height: 100vh;
+  overflow-x: hidden;
+  scrollbar-width: none;
   padding-top: env(safe-area-inset-top);
   background:
     radial-gradient(circle at 10% 0%, rgba(243, 201, 107, 0.18), transparent 28rem),
     radial-gradient(circle at 100% 24%, rgba(74, 143, 139, 0.13), transparent 25rem),
     #f7f3e9;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 /* Keep the app content clear of the iOS home-indicator area when installed. */
@@ -73,13 +89,9 @@ textarea:focus-visible {
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(36, 91, 78, 0.22);
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 @layer components {

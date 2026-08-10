@@ -44,15 +44,15 @@ export default function Home() {
   }, {}), [transactions]);
 
   return (
-    <div className="space-y-5 sm:space-y-7">
-      <div className="flex justify-center">
-        <MonthPicker value={month} onChange={setMonth} />
+    <div className="space-y-4 sm:space-y-6">
+      <div className="fixed inset-x-0 top-[env(safe-area-inset-top)] z-30 flex h-12 items-center justify-center border-b border-ink/[0.05] bg-cream/90 px-4 backdrop-blur-xl lg:static lg:h-auto lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
+        <MonthPicker value={month} onChange={setMonth} dense />
       </div>
 
       <section className="overflow-hidden rounded-[28px] border border-ink/[0.07] bg-paper/90 shadow-card">
         <div className="grid grid-cols-7 border-b border-ink/[0.07] bg-ink/[0.035]">
           {weekDays.map((day, index) => (
-            <div key={day} className={`py-2.5 text-center text-[11px] font-extrabold ${index === 5 ? 'text-[#1698bf]' : index === 6 ? 'text-coral' : 'text-ink/45'}`}>{day}</div>
+            <div key={day} className={`py-2 text-center text-[10px] font-extrabold ${index === 5 ? 'text-[#1698bf]' : index === 6 ? 'text-coral' : 'text-ink/45'}`}>{day}</div>
           ))}
         </div>
         {loading ? <CalendarSkeleton /> : <CashflowCalendar month={month} dailyExpenses={dailyExpenses} />}
@@ -98,10 +98,10 @@ function CashflowCalendar({ month, dailyExpenses }) {
         return (
           <div
             key={dateKey}
-            className={`relative min-h-[54px] border-b border-r border-ink/[0.06] p-1.5 sm:min-h-[68px] sm:p-2 ${inCurrentMonth ? 'bg-white/35' : 'bg-ink/[0.018]'} ${isToday ? 'bg-sun/15' : ''}`}
+            className={`relative min-h-[48px] border-b border-r border-ink/[0.06] p-1 sm:min-h-[62px] sm:p-1.5 ${inCurrentMonth ? 'bg-white/35' : 'bg-ink/[0.018]'} ${isToday ? 'bg-sun/15' : ''}`}
           >
-            <span className={`text-xs font-bold sm:text-sm ${!inCurrentMonth ? 'text-ink/20' : dayOfWeek === 5 ? 'text-[#1698bf]' : dayOfWeek === 6 ? 'text-coral' : 'text-ink/60'}`}>{date.getUTCDate()}</span>
-            {inCurrentMonth && expense > 0 && <div className="mt-2 truncate text-right text-[10px] font-extrabold text-coral sm:mt-3 sm:text-xs">{formatCalendarAmount(expense)}</div>}
+            <span className={`text-[11px] font-bold sm:text-xs ${!inCurrentMonth ? 'text-ink/20' : dayOfWeek === 5 ? 'text-[#1698bf]' : dayOfWeek === 6 ? 'text-coral' : 'text-ink/60'}`}>{date.getUTCDate()}</span>
+            {inCurrentMonth && expense > 0 && <div className="mt-1.5 truncate text-right text-[9px] font-extrabold text-coral sm:mt-2 sm:text-[11px]">{formatCalendarAmount(expense)}</div>}
           </div>
         );
       })}
@@ -112,9 +112,9 @@ function CashflowCalendar({ month, dailyExpenses }) {
 function SummaryItem({ label, value, currency, tone, loading }) {
   const valueColor = tone === 'income' ? 'text-[#1698bf]' : 'text-coral';
   return (
-    <div className="min-w-0 border-r border-ink/[0.06] px-2 py-4 text-center last:border-r-0 sm:px-4">
-      <div className="text-[10px] font-bold uppercase tracking-[0.09em] text-ink/42 sm:text-xs">{label}</div>
-      {loading ? <Skeleton className="mx-auto mt-2 h-5 w-20" /> : <div className={`mt-1 truncate text-sm font-black tracking-[-0.03em] sm:text-xl ${valueColor}`}>{formatMoney(value, currency)}</div>}
+    <div className="min-w-0 border-r border-ink/[0.06] px-1.5 py-3 text-center last:border-r-0 sm:px-4 sm:py-4">
+      <div className="text-[9px] font-bold uppercase tracking-[0.08em] text-ink/42 sm:text-[11px]">{label}</div>
+      {loading ? <Skeleton className="mx-auto mt-2 h-4 w-16" /> : <div className={`mt-1 truncate text-xs font-black tracking-[-0.03em] sm:text-lg ${valueColor}`}>{formatMoney(value, currency)}</div>}
     </div>
   );
 }
@@ -122,7 +122,7 @@ function SummaryItem({ label, value, currency, tone, loading }) {
 function CalendarSkeleton() {
   return (
     <div className="grid grid-cols-7">
-      {Array.from({ length: 42 }, (_, index) => <Skeleton key={index} className="min-h-[54px] rounded-none border-b border-r border-white/50 bg-ink/[0.045] sm:min-h-[68px]" />)}
+      {Array.from({ length: 42 }, (_, index) => <Skeleton key={index} className="min-h-[48px] rounded-none border-b border-r border-white/50 bg-ink/[0.045] sm:min-h-[62px]" />)}
     </div>
   );
 }

@@ -67,8 +67,8 @@ export default function AppShell({ children }) {
           </div>
           <Avatar user={user} />
         </header>
-        <main className="mx-auto min-h-screen max-w-[1440px] px-4 pb-28 pt-6 sm:px-7 lg:px-10 lg:pb-12 lg:pt-9 xl:px-14">
-          <div key={location.pathname} className="animate-fade-in">
+        <main className={`mx-auto min-h-screen max-w-[1440px] px-4 pb-28 sm:px-7 lg:px-10 lg:pb-12 lg:pt-9 xl:px-14 ${isHome ? 'pt-16' : 'pt-6'}`}>
+          <div key={location.pathname} className={isHome ? '' : 'animate-fade-in'}>
             {children}
           </div>
         </main>
