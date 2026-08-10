@@ -14,7 +14,7 @@ const weekDays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
 export default function Home() {
   const { family } = useAuth();
-  const { revision, getCache, setCache } = useFamilyData();
+  const { revision, touch, getCache, setCache } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
   const [summary, setSummary] = useState(null);
@@ -54,9 +54,21 @@ export default function Home() {
     return totals;
   }, {}), [transactions]);
 
+  const remove = async (transaction) => {
+    if (!window.confirm(`Xóa giao dịch ${transaction.category.name}?`)) return;
+    try {
+      await api.delete(`/transactions/${transaction.id}`);
+      setTransactions((current) => current.filter((item) => item.id !== transaction.id));
+      notify('Đã xóa giao dịch.');
+      touch();
+    } catch (error) {
+      notify(errorMessage(error), 'error');
+    }
+  };
+
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div className="fixed inset-x-0 top-[env(safe-area-inset-top)] z-30 flex h-12 items-center justify-center bg-cream/90 backdrop-blur-xl lg:static lg:h-auto lg:bg-transparent lg:backdrop-blur-none">
+      <div className="fixed inset-x-0 top-[env(safe-area-inset-top)] z-30 flex h-12 items-center justify-center bg-cream/90 px-4 backdrop-blur-xl sm:px-7 lg:static lg:h-auto lg:bg-transparent lg:px-0 lg:backdrop-blur-none">
         <MonthPicker value={month} onChange={setMonth} dense fullWidth />
       </div>
 
@@ -82,7 +94,7 @@ export default function Home() {
           </div>
           <Link to="/reports" className="flex min-h-10 shrink-0 items-center gap-1 whitespace-nowrap text-xs font-extrabold text-forest sm:text-sm">Xem tất cả <ArrowRight className="size-4" /></Link>
         </div>
-        {loading ? <TransactionListSkeleton compact /> : <TransactionList transactions={transactions.slice(0, 10)} currency={family.currency} compact />}
+        {loading ? <TransactionListSkeleton compact /> : <TransactionList transactions={transactions.slice(0, 10)} currency={family.currency} onDelete={remove} compact />}
       </section>
     </div>
   );

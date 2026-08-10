@@ -107,7 +107,7 @@ export default function Plans() {
         <h1 className="font-editorial text-[30px] font-semibold tracking-[-0.025em] text-ink sm:text-4xl">Kế hoạch chi tiêu</h1>
       </header>
 
-      <div className="-mx-4 sm:mx-0">
+      <div>
         <MonthPicker value={month} onChange={setMonth} dense fullWidth />
       </div>
 
