@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, Plus, TrendingDown, Wallet } from 'lucide-react';
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
+import { ArrowRight, CalendarDays, Plus } from 'lucide-react';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
-import Skeleton, { ChartSkeleton, TransactionListSkeleton } from '../components/ui/Skeleton.jsx';
+import Skeleton, { TransactionListSkeleton } from '../components/ui/Skeleton.jsx';
 import TransactionList from '../components/TransactionList.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import api, { errorMessage } from '../utils/api.js';
-import { compactMoney, currentMonth, formatMoney } from '../utils/formatters.js';
+import { currentMonth, formatMoney } from '../utils/formatters.js';
+
+const weekDays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
 export default function Home() {
   const { user, family } = useAuth();
@@ -25,7 +26,7 @@ export default function Home() {
     setLoading(true);
     Promise.all([
       api.get('/reports/summary', { params: { month } }),
-      api.get('/transactions', { params: { month, limit: 10 } }),
+      api.get('/transactions', { params: { month, limit: 200 } }),
     ]).then(([summaryResponse, transactionResponse]) => {
       if (!active) return;
       setSummary(summaryResponse.data);
@@ -35,72 +36,111 @@ export default function Home() {
     return () => { active = false; };
   }, [month, revision, notify]);
 
-  const expenseCategories = useMemo(() => summary?.categories.filter((item) => item.type === 'expense') || [], [summary]);
-  const hour = new Date().getHours();
-  const greeting = hour < 11 ? 'Chào buổi sáng' : hour < 18 ? 'Chào buổi chiều' : 'Chào buổi tối';
+  const dailyExpenses = useMemo(() => transactions.reduce((totals, transaction) => {
+    if (transaction.type === 'expense') {
+      totals[transaction.transactionDate] = (totals[transaction.transactionDate] || 0) + Number(transaction.amount);
+    }
+    return totals;
+  }, {}), [transactions]);
 
   return (
-    <div className="space-y-7">
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+    <div className="space-y-5 sm:space-y-7">
+      <header className="flex items-center justify-between gap-4">
         <div>
-          <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.17em] text-coral">{greeting}, {user.displayName}</p>
-          <h1 className="font-editorial text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">Nhà mình hôm nay.</h1>
+          <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-coral">Xin chào, {user.displayName}</p>
+          <h1 className="mt-1 font-editorial text-3xl font-semibold tracking-[-0.03em] text-ink sm:text-4xl">Dòng tiền tháng này</h1>
         </div>
-        <MonthPicker value={month} onChange={setMonth} compact />
+        <Link to="/add" className="hidden min-h-12 items-center gap-2 rounded-2xl bg-ink px-4 text-sm font-extrabold text-white shadow-card sm:flex">
+          <Plus className="size-4" /> Thêm giao dịch
+        </Link>
+      </header>
+
+      <div className="flex justify-center">
+        <MonthPicker value={month} onChange={setMonth} />
       </div>
 
-      <section className="relative overflow-hidden rounded-[32px] bg-ink p-6 text-white shadow-soft sm:p-8 lg:p-10">
-        <div className="absolute -right-16 -top-24 size-72 rounded-full bg-forest blur-2xl" />
-        <div className="absolute bottom-[-60%] left-[32%] size-80 rounded-full bg-coral/20 blur-3xl" />
-        <div className="relative grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-white/45"><Wallet className="size-4 text-sun" /> Số dư trong tháng</div>
-            {loading ? <Skeleton className="mt-5 h-12 w-64 max-w-full bg-white/10" /> : <div className="mt-3 font-editorial text-[46px] font-bold leading-none tracking-[-0.03em] sm:text-6xl">{formatMoney(summary?.balance, family.currency)}</div>}
-            <p className="mt-4 max-w-lg text-sm leading-6 text-white/48">Thu nhập trừ chi tiêu của tháng đã chọn. Khoản tiết kiệm được tính như một mục chi để phản ánh đúng dòng tiền thực tế.</p>
-          </div>
-          <div className="flex gap-3">
-            <Link to="/add?type=expense" className="flex min-h-12 items-center gap-2 rounded-2xl bg-white px-4 text-sm font-extrabold text-ink transition hover:-translate-y-0.5"><Plus className="size-4" /> Ghi khoản chi</Link>
-            <Link to="/add?type=income" className="grid size-12 place-items-center rounded-2xl border border-white/15 bg-white/10 text-white transition hover:bg-white/15" aria-label="Thêm khoản thu"><ArrowDownLeft className="size-5" /></Link>
-          </div>
+      <section className="overflow-hidden rounded-[28px] border border-ink/[0.07] bg-paper/90 shadow-card">
+        <div className="grid grid-cols-7 border-b border-ink/[0.07] bg-ink/[0.035]">
+          {weekDays.map((day, index) => (
+            <div key={day} className={`py-2.5 text-center text-[11px] font-extrabold ${index === 5 ? 'text-[#1698bf]' : index === 6 ? 'text-coral' : 'text-ink/45'}`}>{day}</div>
+          ))}
+        </div>
+        {loading ? <CalendarSkeleton /> : <CashflowCalendar month={month} dailyExpenses={dailyExpenses} />}
+        <div className="grid grid-cols-3 border-t border-ink/[0.07] bg-white/55">
+          <SummaryItem label="Thu nhập" value={summary?.income} currency={family.currency} tone="income" loading={loading} />
+          <SummaryItem label="Chi tiêu" value={summary?.expense} currency={family.currency} tone="expense" loading={loading} />
+          <SummaryItem label="Còn lại" value={summary?.balance} currency={family.currency} tone={summary?.balance >= 0 ? 'income' : 'expense'} loading={loading} />
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-3">
-        <MetricCard label="Tổng thu" value={summary?.income} currency={family.currency} icon={ArrowDownLeft} tone="green" loading={loading} />
-        <MetricCard label="Tổng chi" value={summary?.expense} currency={family.currency} icon={ArrowUpRight} tone="coral" loading={loading} />
-        <MetricCard label="Giao dịch" value={summary?.transactionCount || 0} icon={TrendingDown} loading={loading} plain />
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-        <div className="rounded-[30px] border border-ink/[0.06] bg-paper/85 p-5 shadow-card sm:p-7">
-          <div className="mb-2 flex items-center justify-between">
-            <div><p className="mb-2 text-xs font-extrabold uppercase tracking-[0.15em] text-ink/35">Mới nhất</p><h2 className="section-title">Giao dịch gần đây</h2></div>
-            <Link to="/reports" className="flex items-center gap-1 text-sm font-extrabold text-forest">Xem tất cả <ArrowRight className="size-4" /></Link>
+      <section className="rounded-[28px] border border-ink/[0.06] bg-paper/90 p-4 shadow-card sm:p-6">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="size-5 text-forest" />
+            <h2 className="section-title">Giao dịch gần đây</h2>
           </div>
-          {loading ? <TransactionListSkeleton compact /> : <TransactionList transactions={transactions} currency={family.currency} compact />}
+          <Link to="/reports" className="flex min-h-10 items-center gap-1 text-xs font-extrabold text-forest sm:text-sm">Xem tất cả <ArrowRight className="size-4" /></Link>
         </div>
-
-        <div className="rounded-[30px] border border-ink/[0.06] bg-paper/85 p-5 shadow-card sm:p-7">
-          <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.15em] text-ink/35">Theo danh mục</p>
-          <h2 className="section-title">Chi tiêu đi đâu?</h2>
-          {loading ? <ChartSkeleton type="pie" /> : expenseCategories.length ? (
-            <>
-              <div className="relative mx-auto mt-3 h-56 max-w-xs">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart><Pie data={expenseCategories} dataKey="amount" nameKey="name" innerRadius={62} outerRadius={88} paddingAngle={3} stroke="none">{expenseCategories.map((item) => <Cell key={item.id} fill={item.color} />)}</Pie><Tooltip formatter={(value) => formatMoney(value, family.currency)} contentStyle={{ borderRadius: 16, border: 'none', boxShadow: '0 8px 30px rgba(23,54,47,.12)', fontSize: 12 }} /></PieChart>
-                </ResponsiveContainer>
-                <div className="pointer-events-none absolute inset-0 grid place-items-center text-center"><div><div className="text-[11px] font-bold uppercase tracking-wider text-ink/35">Tổng chi</div><div className="mt-1 text-lg font-extrabold text-ink">{compactMoney(summary.expense, family.currency)}</div></div></div>
-              </div>
-              <div className="mt-2 space-y-3">{expenseCategories.slice(0, 4).map((item) => <div key={item.id} className="flex items-center gap-3 text-sm"><span className="size-2.5 rounded-full" style={{ backgroundColor: item.color }} /><span className="flex-1 truncate font-bold text-ink/65">{item.name}</span><span className="font-extrabold text-ink">{compactMoney(item.amount, family.currency)}</span></div>)}</div>
-            </>
-          ) : <div className="grid h-64 place-items-center text-center text-sm text-ink/40">Chưa có khoản chi trong tháng này.</div>}
-        </div>
+        {loading ? <TransactionListSkeleton compact /> : <TransactionList transactions={transactions.slice(0, 10)} currency={family.currency} compact />}
       </section>
     </div>
   );
 }
 
-function MetricCard({ label, value, currency, icon: Icon, tone, loading, plain }) {
-  const colors = tone === 'green' ? 'bg-mint text-forest' : tone === 'coral' ? 'bg-coral/10 text-coral' : 'bg-sun/25 text-[#9a6b0a]';
-  return <div className="flex items-center gap-4 rounded-[24px] border border-ink/[0.06] bg-white/65 p-5 shadow-sm"><span className={`grid size-12 place-items-center rounded-[17px] ${colors}`}><Icon className="size-5" /></span><div><div className="text-xs font-bold uppercase tracking-[0.12em] text-ink/35">{label}</div>{loading ? <Skeleton className="mt-2 h-6 w-28" /> : <div className="mt-1 text-lg font-extrabold text-ink">{plain ? value : formatMoney(value, currency)}</div>}</div></div>;
+function CashflowCalendar({ month, dailyExpenses }) {
+  const [year, monthNumber] = month.split('-').map(Number);
+  const firstDay = new Date(Date.UTC(year, monthNumber - 1, 1));
+  const leadingDays = (firstDay.getUTCDay() + 6) % 7;
+  const today = new Date();
+  const todayKey = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())).toISOString().slice(0, 10);
+
+  return (
+    <div className="grid grid-cols-7">
+      {Array.from({ length: 42 }, (_, index) => {
+        const dayOffset = index - leadingDays + 1;
+        const date = new Date(Date.UTC(year, monthNumber - 1, dayOffset));
+        const dateKey = date.toISOString().slice(0, 10);
+        const inCurrentMonth = date.getUTCMonth() === monthNumber - 1;
+        const dayOfWeek = index % 7;
+        const expense = dailyExpenses[dateKey];
+        const isToday = dateKey === todayKey;
+
+        return (
+          <div
+            key={dateKey}
+            className={`relative min-h-[66px] border-b border-r border-ink/[0.06] p-1.5 sm:min-h-[82px] sm:p-2 ${inCurrentMonth ? 'bg-white/35' : 'bg-ink/[0.018]'} ${isToday ? 'bg-sun/15' : ''}`}
+          >
+            <span className={`text-xs font-bold sm:text-sm ${!inCurrentMonth ? 'text-ink/20' : dayOfWeek === 5 ? 'text-[#1698bf]' : dayOfWeek === 6 ? 'text-coral' : 'text-ink/60'}`}>{date.getUTCDate()}</span>
+            {inCurrentMonth && expense > 0 && <div className="mt-3 truncate text-right text-[10px] font-extrabold text-coral sm:mt-5 sm:text-xs">{formatCalendarAmount(expense)}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SummaryItem({ label, value, currency, tone, loading }) {
+  const valueColor = tone === 'income' ? 'text-[#1698bf]' : 'text-coral';
+  return (
+    <div className="min-w-0 border-r border-ink/[0.06] px-2 py-4 text-center last:border-r-0 sm:px-4">
+      <div className="text-[10px] font-bold uppercase tracking-[0.09em] text-ink/42 sm:text-xs">{label}</div>
+      {loading ? <Skeleton className="mx-auto mt-2 h-5 w-20" /> : <div className={`mt-1 truncate text-sm font-black tracking-[-0.03em] sm:text-xl ${valueColor}`}>{formatMoney(value, currency)}</div>}
+    </div>
+  );
+}
+
+function CalendarSkeleton() {
+  return (
+    <div className="grid grid-cols-7">
+      {Array.from({ length: 42 }, (_, index) => <Skeleton key={index} className="min-h-[66px] rounded-none border-b border-r border-white/50 bg-ink/[0.045] sm:min-h-[82px]" />)}
+    </div>
+  );
+}
+
+function formatCalendarAmount(value) {
+  const compact = (amount) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(amount);
+  if (value >= 1_000_000_000) return `${compact(value / 1_000_000_000)}tỷ`;
+  if (value >= 1_000_000) return `${compact(value / 1_000_000)}tr`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}k`;
+  return String(value);
 }
