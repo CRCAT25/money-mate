@@ -17,44 +17,42 @@ router.get(
   async (req, res) => {
     const db = getDb();
     const range = monthRange(req.query.month);
-    const [budgets, spending] = await Promise.all([
-      db.prepare(`
-        SELECT b.id, b.month, b.amount, c.id AS category_id, c.name AS category_name,
-          c.icon AS category_icon, c.color AS category_color
-        FROM budgets b
-        JOIN categories c ON c.id = b.category_id
-        WHERE b.family_id = ? AND b.month = ?
-        ORDER BY LOWER(c.name)
-      `).all(req.user.familyId, req.query.month),
-      db.prepare(`
-        SELECT category_id, SUM(amount) AS spent
-        FROM transactions
-        WHERE family_id = ? AND type = 'expense' AND transaction_date >= ? AND transaction_date < ?
-        GROUP BY category_id
-      `).all(req.user.familyId, range.start, range.end),
-    ]);
+    const categories = await db.prepare(`
+      SELECT c.id AS category_id, c.name AS category_name, c.icon AS category_icon,
+        c.color AS category_color, b.id, b.month, COALESCE(b.amount, 0) AS amount,
+        COALESCE(SUM(t.amount), 0) AS spent
+      FROM categories c
+      LEFT JOIN budgets b
+        ON b.category_id = c.id AND b.family_id = c.family_id AND b.month = ?
+      LEFT JOIN transactions t
+        ON t.category_id = c.id AND t.family_id = c.family_id AND t.type = 'expense'
+        AND t.transaction_date >= ? AND t.transaction_date < ?
+      WHERE c.family_id = ? AND c.type = 'expense'
+      GROUP BY c.id, c.name, c.icon, c.color, b.id, b.month, b.amount
+      ORDER BY LOWER(c.name)
+    `).all(req.query.month, range.start, range.end, req.user.familyId);
 
-    const spendingByCategory = new Map(spending.map((item) => [item.category_id, Number(item.spent)]));
-    const items = budgets.map((budget) => {
-      const amount = Number(budget.amount);
-      const spent = spendingByCategory.get(budget.category_id) || 0;
+    const items = categories.map((category) => {
+      const amount = Number(category.amount);
+      const spent = Number(category.spent);
       return {
-        id: budget.id,
-        month: budget.month,
+        id: category.id || null,
+        month: category.month || req.query.month,
         amount,
         spent,
         remaining: amount - spent,
         percentage: amount ? Math.round((spent / amount) * 100) : 0,
         category: {
-          id: budget.category_id,
-          name: budget.category_name,
-          icon: budget.category_icon,
-          color: budget.category_color,
+          id: category.category_id,
+          name: category.category_name,
+          icon: category.category_icon,
+          color: category.category_color,
         },
       };
     });
-    const planned = items.reduce((total, item) => total + item.amount, 0);
-    const spent = items.reduce((total, item) => total + item.spent, 0);
+    const plannedItems = items.filter((item) => item.id);
+    const planned = plannedItems.reduce((total, item) => total + item.amount, 0);
+    const spent = plannedItems.reduce((total, item) => total + item.spent, 0);
 
     res.json({
       month: req.query.month,

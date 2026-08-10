@@ -306,11 +306,12 @@ test('monthly spending plans are shared and track actual expenses', async () => 
   assert.equal(afterCreateSync.body.transactionsRevision, initialSync.body.transactionsRevision);
 
   const firstPlan = await request(app).get('/api/budgets?month=2026-08').set(auth).expect(200);
+  const foodPlan = firstPlan.body.items.find((item) => item.category.id === food.id);
   assert.equal(firstPlan.body.planned, 500000);
   assert.equal(firstPlan.body.spent, 125000);
   assert.equal(firstPlan.body.remaining, 375000);
-  assert.equal(firstPlan.body.items[0].category.name, 'Ăn uống');
-  assert.equal(firstPlan.body.items[0].percentage, 25);
+  assert.equal(foodPlan.category.name, 'Ăn uống');
+  assert.equal(foodPlan.percentage, 25);
 
   const updated = await request(app)
     .post('/api/budgets')
@@ -320,14 +321,14 @@ test('monthly spending plans are shared and track actual expenses', async () => 
   assert.equal(updated.body.id, created.body.id);
 
   const updatedPlan = await request(app).get('/api/budgets?month=2026-08').set(auth).expect(200);
-  assert.equal(updatedPlan.body.items.length, 1);
-  assert.equal(updatedPlan.body.items[0].amount, 1000000);
+  assert.equal(updatedPlan.body.items.find((item) => item.category.id === food.id).amount, 1000000);
 
   await request(app).delete(`/api/budgets/${created.body.id}`).set(auth).expect(204);
   const emptyPlan = await request(app).get('/api/budgets?month=2026-08').set(auth).expect(200);
   assert.equal(emptyPlan.body.planned, 0);
   assert.equal(emptyPlan.body.spent, 0);
-  assert.equal(emptyPlan.body.items.length, 0);
+  assert.ok(emptyPlan.body.items.length > 0);
+  assert.equal(emptyPlan.body.items.find((item) => item.category.id === food.id).id, null);
 });
 
 test('reports expose trends and a UTF-8 CSV export', async () => {
