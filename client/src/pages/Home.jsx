@@ -94,7 +94,7 @@ export default function Home() {
           </div>
           <Link to="/reports" className="flex min-h-10 shrink-0 items-center gap-1 whitespace-nowrap text-xs font-extrabold text-forest sm:text-sm">Xem tất cả <ArrowRight className="size-4" /></Link>
         </div>
-        {loading ? <TransactionListSkeleton compact /> : <TransactionList transactions={transactions.slice(0, 10)} currency={family.currency} onDelete={remove} compact />}
+        {loading ? <TransactionListSkeleton compact /> : <TransactionList transactions={transactions.slice(0, 10)} currency={family.currency} onDelete={remove} compact groupByDate showTime />}
       </section>
     </div>
   );
@@ -124,7 +124,7 @@ function CashflowCalendar({ month, dailyExpenses }) {
             className={`relative min-h-[48px] border-b border-r border-ink/[0.06] p-1 sm:min-h-[62px] sm:p-1.5 ${inCurrentMonth ? 'bg-white/35' : 'bg-ink/[0.018]'} ${isToday ? 'bg-sun/15' : ''}`}
           >
             <span className={`text-[11px] font-bold sm:text-xs ${!inCurrentMonth ? 'text-ink/20' : dayOfWeek === 5 ? 'text-[#1698bf]' : dayOfWeek === 6 ? 'text-coral' : 'text-ink/60'}`}>{date.getUTCDate()}</span>
-            {inCurrentMonth && expense > 0 && <div className="mt-1.5 truncate text-right text-[9px] font-extrabold text-coral sm:mt-2 sm:text-[11px]">{formatCalendarAmount(expense)}</div>}
+            {inCurrentMonth && expense > 0 && <div className="mt-1.5 whitespace-nowrap text-right text-[7px] font-extrabold tracking-[-0.03em] text-coral sm:mt-2 sm:text-[10px]">{formatCalendarAmount(expense)}</div>}
           </div>
         );
       })}
@@ -151,9 +151,5 @@ function CalendarSkeleton() {
 }
 
 function formatCalendarAmount(value) {
-  const compact = (amount) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(amount);
-  if (value >= 1_000_000_000) return `${compact(value / 1_000_000_000)}tỷ`;
-  if (value >= 1_000_000) return `${compact(value / 1_000_000)}tr`;
-  if (value >= 1_000) return `${Math.round(value / 1_000)}k`;
-  return String(value);
+  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Number(value || 0));
 }
