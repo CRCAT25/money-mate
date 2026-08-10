@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CalendarDays, Plus } from 'lucide-react';
+import { ArrowRight, CalendarDays } from 'lucide-react';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import Skeleton, { TransactionListSkeleton } from '../components/ui/Skeleton.jsx';
 import TransactionList from '../components/TransactionList.jsx';
@@ -13,7 +13,7 @@ import { currentMonth, formatMoney } from '../utils/formatters.js';
 const weekDays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
 export default function Home() {
-  const { user, family } = useAuth();
+  const { family } = useAuth();
   const { revision } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
@@ -45,16 +45,6 @@ export default function Home() {
 
   return (
     <div className="space-y-5 sm:space-y-7">
-      <header className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-coral">Xin chào, {user.displayName}</p>
-          <h1 className="mt-1 font-editorial text-3xl font-semibold tracking-[-0.03em] text-ink sm:text-4xl">Dòng tiền tháng này</h1>
-        </div>
-        <Link to="/add" className="hidden min-h-12 items-center gap-2 rounded-2xl bg-ink px-4 text-sm font-extrabold text-white shadow-card sm:flex">
-          <Plus className="size-4" /> Thêm giao dịch
-        </Link>
-      </header>
-
       <div className="flex justify-center">
         <MonthPicker value={month} onChange={setMonth} />
       </div>
@@ -77,9 +67,9 @@ export default function Home() {
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CalendarDays className="size-5 text-forest" />
-            <h2 className="section-title">Giao dịch gần đây</h2>
+            <h2 className="whitespace-nowrap text-lg font-extrabold tracking-[-0.02em] text-ink sm:text-2xl">Giao dịch gần đây</h2>
           </div>
-          <Link to="/reports" className="flex min-h-10 items-center gap-1 text-xs font-extrabold text-forest sm:text-sm">Xem tất cả <ArrowRight className="size-4" /></Link>
+          <Link to="/reports" className="flex min-h-10 shrink-0 items-center gap-1 whitespace-nowrap text-xs font-extrabold text-forest sm:text-sm">Xem tất cả <ArrowRight className="size-4" /></Link>
         </div>
         {loading ? <TransactionListSkeleton compact /> : <TransactionList transactions={transactions.slice(0, 10)} currency={family.currency} compact />}
       </section>
@@ -108,10 +98,10 @@ function CashflowCalendar({ month, dailyExpenses }) {
         return (
           <div
             key={dateKey}
-            className={`relative min-h-[66px] border-b border-r border-ink/[0.06] p-1.5 sm:min-h-[82px] sm:p-2 ${inCurrentMonth ? 'bg-white/35' : 'bg-ink/[0.018]'} ${isToday ? 'bg-sun/15' : ''}`}
+            className={`relative min-h-[54px] border-b border-r border-ink/[0.06] p-1.5 sm:min-h-[68px] sm:p-2 ${inCurrentMonth ? 'bg-white/35' : 'bg-ink/[0.018]'} ${isToday ? 'bg-sun/15' : ''}`}
           >
             <span className={`text-xs font-bold sm:text-sm ${!inCurrentMonth ? 'text-ink/20' : dayOfWeek === 5 ? 'text-[#1698bf]' : dayOfWeek === 6 ? 'text-coral' : 'text-ink/60'}`}>{date.getUTCDate()}</span>
-            {inCurrentMonth && expense > 0 && <div className="mt-3 truncate text-right text-[10px] font-extrabold text-coral sm:mt-5 sm:text-xs">{formatCalendarAmount(expense)}</div>}
+            {inCurrentMonth && expense > 0 && <div className="mt-2 truncate text-right text-[10px] font-extrabold text-coral sm:mt-3 sm:text-xs">{formatCalendarAmount(expense)}</div>}
           </div>
         );
       })}
@@ -132,7 +122,7 @@ function SummaryItem({ label, value, currency, tone, loading }) {
 function CalendarSkeleton() {
   return (
     <div className="grid grid-cols-7">
-      {Array.from({ length: 42 }, (_, index) => <Skeleton key={index} className="min-h-[66px] rounded-none border-b border-r border-white/50 bg-ink/[0.045] sm:min-h-[82px]" />)}
+      {Array.from({ length: 42 }, (_, index) => <Skeleton key={index} className="min-h-[54px] rounded-none border-b border-r border-white/50 bg-ink/[0.045] sm:min-h-[68px]" />)}
     </div>
   );
 }

@@ -14,6 +14,7 @@ const nav = [
 export default function AppShell({ children }) {
   const { user, family } = useAuth();
   const location = useLocation();
+  const isHome = location.pathname === '/';
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[248px_1fr]">
@@ -56,7 +57,7 @@ export default function AppShell({ children }) {
       </aside>
 
       <div className="min-w-0 lg:col-start-2">
-        <header className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-ink/[0.06] bg-cream/85 px-4 backdrop-blur-xl sm:px-7 lg:hidden">
+        <header className={`${isHome ? 'hidden' : 'flex'} sticky top-0 z-30 h-[72px] items-center justify-between border-b border-ink/[0.06] bg-cream/85 px-4 backdrop-blur-xl sm:px-7 lg:hidden`}>
           <div className="flex items-center gap-3">
             <div className="grid size-10 place-items-center rounded-[14px] bg-ink font-editorial text-xl font-bold text-white">M</div>
             <div>
