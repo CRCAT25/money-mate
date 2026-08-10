@@ -38,14 +38,7 @@ function GuestRoute({ children }) {
 function LoadingScreen() {
   return (
     <div aria-label="Đang tải MoneyMate" className="min-h-screen bg-cream" role="status">
-      <header className="flex h-[72px] items-center justify-between border-b border-ink/[0.06] px-4 sm:px-7">
-        <div className="flex items-center gap-3">
-          <div className="grid size-10 place-items-center rounded-[14px] bg-ink font-extrabold text-white">M</div>
-          <div className="space-y-2"><Skeleton className="h-2.5 w-16" /><Skeleton className="h-3.5 w-40" /></div>
-        </div>
-        <Skeleton className="size-10 rounded-full" />
-      </header>
-      <main className="mx-auto max-w-5xl space-y-7 px-4 pb-28 pt-7 sm:px-7">
+      <main className="mx-auto max-w-5xl space-y-7 px-4 pb-28 pt-6 sm:px-7 lg:pt-9">
         <div className="space-y-3"><Skeleton className="h-3 w-40" /><Skeleton className="h-11 w-72 max-w-full rounded-2xl" /></div>
         <Skeleton className="h-64 w-full rounded-[32px] bg-ink/10" />
         <div className="grid gap-4 sm:grid-cols-3">{Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="h-24 rounded-[24px]" />)}</div>
