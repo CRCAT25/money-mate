@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Copy, ImagePlus, KeyRound, LoaderCircle, LogOut, RefreshCw, Save, Shield, Trash2, UserMinus, Users, X } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Copy, Grid2X2, ImagePlus, KeyRound, LoaderCircle, LogOut, RefreshCw, Save, Shield, Trash2, UserMinus, Users, X } from 'lucide-react';
 import Avatar from '../components/ui/Avatar.jsx';
 import Skeleton from '../components/ui/Skeleton.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -73,7 +73,7 @@ export default function Settings() {
 
   return (
     <div className="space-y-7">
-      <div><p className="mb-2 text-xs font-extrabold uppercase tracking-[0.17em] text-coral">Không gian của nhà mình</p><h1 className="font-editorial text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">Cài đặt.</h1></div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="mb-2 text-xs font-extrabold uppercase tracking-[0.17em] text-coral">Không gian của nhà mình</p><h1 className="font-editorial text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">Cài đặt.</h1></div><Link to="/categories" className="secondary-button"><Grid2X2 className="size-4" /> Quản lý danh mục</Link></div>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <SettingsCard eyebrow="Cá nhân" title="Hồ sơ của bạn" icon={Shield}>

@@ -285,6 +285,51 @@ test('category and transaction CRUD preserve family data rules', async () => {
   await request(app).delete(`/api/categories/${createdCategory.body.id}`).set(auth).expect(204);
 });
 
+test('monthly spending plans are shared and track actual expenses', async () => {
+  const login = await request(app)
+    .post('/api/auth/login')
+    .send({ email: 'owner@example.com', password: 'MoneyMate123!' })
+    .expect(200);
+  const auth = { Authorization: `Bearer ${login.body.accessToken}` };
+  const categories = await request(app).get('/api/categories').set(auth).expect(200);
+  const food = categories.body.find((category) => category.name === 'Ăn uống' && category.type === 'expense');
+  const initialSync = await request(app).get('/api/family/sync').set(auth).expect(200);
+
+  const created = await request(app)
+    .post('/api/budgets')
+    .set(auth)
+    .send({ month: '2026-08', categoryId: food.id, amount: 500000 })
+    .expect(201);
+
+  const afterCreateSync = await request(app).get('/api/family/sync').set(auth).expect(200);
+  assert.equal(afterCreateSync.body.baseRevision, initialSync.body.baseRevision + 1);
+  assert.equal(afterCreateSync.body.transactionsRevision, initialSync.body.transactionsRevision);
+
+  const firstPlan = await request(app).get('/api/budgets?month=2026-08').set(auth).expect(200);
+  assert.equal(firstPlan.body.planned, 500000);
+  assert.equal(firstPlan.body.spent, 125000);
+  assert.equal(firstPlan.body.remaining, 375000);
+  assert.equal(firstPlan.body.items[0].category.name, 'Ăn uống');
+  assert.equal(firstPlan.body.items[0].percentage, 25);
+
+  const updated = await request(app)
+    .post('/api/budgets')
+    .set(auth)
+    .send({ month: '2026-08', categoryId: food.id, amount: 1000000 })
+    .expect(201);
+  assert.equal(updated.body.id, created.body.id);
+
+  const updatedPlan = await request(app).get('/api/budgets?month=2026-08').set(auth).expect(200);
+  assert.equal(updatedPlan.body.items.length, 1);
+  assert.equal(updatedPlan.body.items[0].amount, 1000000);
+
+  await request(app).delete(`/api/budgets/${created.body.id}`).set(auth).expect(204);
+  const emptyPlan = await request(app).get('/api/budgets?month=2026-08').set(auth).expect(200);
+  assert.equal(emptyPlan.body.planned, 0);
+  assert.equal(emptyPlan.body.spent, 0);
+  assert.equal(emptyPlan.body.items.length, 0);
+});
+
 test('reports expose trends and a UTF-8 CSV export', async () => {
   const login = await request(app)
     .post('/api/auth/login')

@@ -105,6 +105,7 @@ export function FamilyProvider({ children }) {
       const socket = io(socketUrl, { auth: { token: sessionStorage.getAccess() } });
       socket.on('transactions:changed', syncChanged);
       socket.on('categories:changed', syncChanged);
+      socket.on('budgets:changed', syncChanged);
       socket.on('family:changed', syncChanged);
       return () => socket.disconnect();
     }

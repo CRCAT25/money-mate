@@ -1,15 +1,17 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { BarChart3, Grid2X2, Home, Plus, Settings, Sparkles } from 'lucide-react';
+import { BarChart3, Grid2X2, Home, Plus, Settings, Sparkles, Target } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import Avatar from '../ui/Avatar.jsx';
 
 const nav = [
   { to: '/', label: 'Tổng quan', mobile: 'Home', icon: Home },
+  { to: '/plans', label: 'Kế hoạch chi tiêu', mobile: 'Kế hoạch', icon: Target },
   { to: '/categories', label: 'Danh mục', mobile: 'Danh mục', icon: Grid2X2 },
   { to: '/add', label: 'Thêm giao dịch', mobile: 'Thêm', icon: Plus, primary: true },
   { to: '/reports', label: 'Báo cáo', mobile: 'Báo cáo', icon: BarChart3 },
   { to: '/settings', label: 'Cài đặt', mobile: 'Cài đặt', icon: Settings },
 ];
+const mobileNav = nav.filter((item) => item.to !== '/categories');
 
 export default function AppShell({ children }) {
   const { user, family } = useAuth();
@@ -65,7 +67,7 @@ export default function AppShell({ children }) {
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 grid h-[78px] grid-cols-5 items-start border-t border-ink/10 bg-paper/95 px-2 pb-[env(safe-area-inset-bottom)] pt-2 shadow-[0_-10px_30px_rgba(23,54,47,0.08)] backdrop-blur-xl lg:hidden">
-        {nav.map(({ to, mobile, icon: Icon, primary }) => (
+        {mobileNav.map(({ to, mobile, icon: Icon, primary }) => (
           <NavLink
             key={to}
             to={to}

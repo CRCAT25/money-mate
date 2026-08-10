@@ -196,6 +196,21 @@ async function migrate(db) {
       FOREIGN KEY (assigned_to) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS budgets (
+      id TEXT PRIMARY KEY,
+      family_id TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      month TEXT NOT NULL,
+      amount ${amountType} NOT NULL CHECK(amount > 0),
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(family_id, category_id, month),
+      FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    );
+
     CREATE TABLE IF NOT EXISTS refresh_tokens (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -219,6 +234,7 @@ async function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_transactions_family_date
       ON transactions(family_id, transaction_date DESC);
     CREATE INDEX IF NOT EXISTS idx_categories_family ON categories(family_id);
+    CREATE INDEX IF NOT EXISTS idx_budgets_family_month ON budgets(family_id, month);
   `);
   await ensureFamilyRevisionColumns(db);
 }

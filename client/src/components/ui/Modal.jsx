@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 export default function Modal({ open, title, children, onClose }) {
@@ -14,7 +15,7 @@ export default function Modal({ open, title, children, onClose }) {
   }, [open, onClose]);
 
   if (!open) return null;
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-0 backdrop-blur-sm sm:items-center sm:p-5" onMouseDown={onClose}>
       <section className="max-h-[92vh] w-full max-w-lg animate-rise-in overflow-y-auto rounded-t-[30px] bg-paper p-5 shadow-soft sm:rounded-[30px] sm:p-7" onMouseDown={(event) => event.stopPropagation()}>
         <div className="mb-6 flex items-center justify-between gap-4">
@@ -25,7 +26,7 @@ export default function Modal({ open, title, children, onClose }) {
         </div>
         {children}
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
-
