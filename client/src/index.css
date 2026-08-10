@@ -1,0 +1,126 @@
+@import '@fontsource/be-vietnam-pro/400.css';
+@import '@fontsource/be-vietnam-pro/500.css';
+@import '@fontsource/be-vietnam-pro/600.css';
+@import '@fontsource/be-vietnam-pro/700.css';
+@import '@fontsource/be-vietnam-pro/800.css';
+@import '@fontsource/be-vietnam-pro/900.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #17362f;
+  background: #f7f3e9;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: #17362f;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  padding-top: env(safe-area-inset-top);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(243, 201, 107, 0.18), transparent 28rem),
+    radial-gradient(circle at 100% 24%, rgba(74, 143, 139, 0.13), transparent 25rem),
+    #f7f3e9;
+}
+
+/* Keep the app content clear of the iOS home-indicator area when installed. */
+body:has(#root) {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(242, 115, 91, 0.35);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(36, 91, 78, 0.22);
+}
+
+@layer components {
+  .field {
+    @apply min-h-12 w-full rounded-2xl border border-ink/10 bg-white/80 px-4 text-[15px] text-ink shadow-sm transition placeholder:text-ink/35 focus:border-forest/40 focus:bg-white;
+  }
+
+  .label {
+    @apply mb-2 block text-sm font-bold text-ink/75;
+  }
+
+  .primary-button {
+    @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-ink px-5 font-bold text-white shadow-lg shadow-ink/15 transition hover:-translate-y-0.5 hover:bg-forest disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .secondary-button {
+    @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-ink/10 bg-white/70 px-5 font-bold text-ink transition hover:bg-white;
+  }
+
+  .section-title {
+    @apply font-editorial text-[28px] font-semibold leading-none tracking-[-0.02em] text-ink;
+  }
+
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: rgba(23, 54, 47, 0.07);
+  }
+
+  .skeleton::after {
+    position: absolute;
+    inset: 0;
+    content: '';
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+    animation: skeleton-shimmer 1.7s ease-in-out infinite;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
