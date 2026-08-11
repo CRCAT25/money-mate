@@ -67,24 +67,32 @@ export default function AppShell({ children }) {
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid h-[68px] grid-cols-5 items-start border-t border-ink/10 bg-paper/96 px-2 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-8px_22px_rgba(32,49,44,0.07)] backdrop-blur-xl lg:hidden">
-        {mobileNav.map(({ to, mobile, icon: Icon, primary }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            className={({ isActive }) => `flex min-w-0 flex-col items-center gap-0.5 text-[9px] font-extrabold transition active:scale-[0.97] ${isActive ? 'text-forest' : 'text-ink/45'}`}
-          >
-            {primary ? (
-              <span className="-mt-4 grid size-12 place-items-center rounded-2xl border-[3px] border-paper bg-coral text-white shadow-md shadow-coral/20">
-                <Icon className="size-5" strokeWidth={2.5} />
-              </span>
-            ) : (
-              <span className="grid size-7 place-items-center"><Icon className="size-[18px]" /></span>
-            )}
-            <span className="truncate">{mobile}</span>
-          </NavLink>
-        ))}
+      <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(6px+env(safe-area-inset-bottom))] lg:hidden">
+        <div className="grid h-[62px] grid-cols-5 items-center rounded-[22px] border border-white/80 bg-paper/90 px-1.5 shadow-[0_10px_32px_rgba(32,49,44,0.14),0_1px_0_rgba(255,255,255,0.9)_inset] backdrop-blur-2xl">
+          {mobileNav.map(({ to, mobile, icon: Icon, primary }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === '/'}
+              className={({ isActive }) => `flex h-full min-w-0 flex-col items-center justify-center gap-0.5 text-[9px] font-medium transition active:scale-[0.96] ${isActive ? 'text-forest' : 'text-ink/38'}`}
+            >
+              {({ isActive }) => (
+                <>
+                  {primary ? (
+                    <span className="-mt-5 grid size-[50px] place-items-center rounded-[17px] border-[4px] border-paper bg-gradient-to-br from-[#ED785F] to-[#DE654E] text-white shadow-[0_8px_18px_rgba(226,111,84,0.3)] transition-transform active:scale-95">
+                      <Icon className="size-[21px]" strokeWidth={2.35} />
+                    </span>
+                  ) : (
+                    <span className={`grid size-8 place-items-center rounded-[11px] transition-colors ${isActive ? 'bg-forest/[0.09]' : 'bg-transparent'}`}>
+                      <Icon className="size-[18px]" strokeWidth={isActive ? 2.25 : 1.9} />
+                    </span>
+                  )}
+                  <span className={`max-w-full truncate leading-none ${primary ? 'text-ink/42' : ''}`}>{mobile}</span>
+                </>
+              )}
+            </NavLink>
+          ))}
+        </div>
       </nav>
     </div>
   );

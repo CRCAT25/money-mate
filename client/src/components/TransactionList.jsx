@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Pencil, Trash2 } from 'lucide-react';
 import { formatMoney } from '../utils/formatters.js';
+import Avatar from './ui/Avatar.jsx';
 import CategoryIcon from './ui/CategoryIcon.jsx';
 import EmptyState from './ui/EmptyState.jsx';
 
@@ -153,13 +154,19 @@ function TransactionRow({ transaction, currency, compact, showTime, onDelete, op
           <h3 className="truncate text-sm font-bold text-ink">{transaction.category.name}</h3>
           {transaction.note && <p className="mt-0.5 truncate text-xs font-semibold text-ink/38">{transaction.note}</p>}
           {showTime ? (
-            <p className="mt-1.5 truncate text-[11px] font-normal leading-4 text-ink/42" title={transaction.assignedTo.displayName}>
-              {formatTransactionTime(transaction.createdAt)} - {shortDisplayName(transaction.assignedTo.displayName)}
-            </p>
+            <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-normal leading-4 text-ink/42" title={transaction.assignedTo.displayName}>
+              <span className="shrink-0">{formatTransactionTime(transaction.createdAt)}</span>
+              <span className="size-0.5 shrink-0 rounded-full bg-ink/25" />
+              <Avatar user={transaction.assignedTo} size="xs" />
+              <span className="truncate">{shortDisplayName(transaction.assignedTo.displayName)}</span>
+            </div>
           ) : (
-            <p className="mt-1 truncate text-xs font-semibold text-ink/40">
-              {formatShortDate(transaction.transactionDate)} · {transaction.assignedTo.displayName}
-            </p>
+            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-semibold text-ink/40" title={transaction.assignedTo.displayName}>
+              <span className="shrink-0">{formatShortDate(transaction.transactionDate)}</span>
+              <span className="size-0.5 shrink-0 rounded-full bg-ink/25" />
+              <Avatar user={transaction.assignedTo} size="xs" />
+              <span className="truncate">{transaction.assignedTo.displayName}</span>
+            </div>
           )}
         </div>
         <div className="text-right">

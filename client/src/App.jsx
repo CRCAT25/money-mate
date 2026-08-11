@@ -45,8 +45,10 @@ function LoadingScreen() {
         <div className="grid gap-4 sm:grid-cols-3">{Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="h-24 rounded-[24px]" />)}</div>
         <div className="grid gap-6 sm:grid-cols-2"><Skeleton className="h-72 rounded-[30px]" /><Skeleton className="h-72 rounded-[30px]" /></div>
       </main>
-      <nav className="fixed inset-x-0 bottom-0 grid h-[78px] grid-cols-5 items-center border-t border-ink/10 bg-paper/95 px-5 pb-[env(safe-area-inset-bottom)] lg:hidden">
-        {Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className={`mx-auto ${index === 2 ? 'size-12 rounded-[18px]' : 'size-7 rounded-xl'}`} />)}
+      <nav className="fixed inset-x-0 bottom-0 px-3 pb-[calc(6px+env(safe-area-inset-bottom))] lg:hidden">
+        <div className="grid h-[62px] grid-cols-5 items-center rounded-[22px] border border-white/80 bg-paper/90 px-1.5 shadow-[0_10px_32px_rgba(32,49,44,0.14)] backdrop-blur-2xl">
+          {Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className={`mx-auto ${index === 2 ? '-mt-5 size-[50px] rounded-[17px]' : 'size-8 rounded-[11px]'}`} />)}
+        </div>
       </nav>
     </div>
   );

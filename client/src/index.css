@@ -98,6 +98,14 @@ a:focus-visible {
   box-shadow: 0 0 0 2px rgba(45, 106, 91, 0.18);
 }
 
+/* Recharts makes its SVG focusable for interactions; suppress the browser's blue tap outline. */
+.recharts-wrapper:focus,
+.recharts-surface:focus,
+.recharts-wrapper:focus-visible,
+.recharts-surface:focus-visible {
+  outline: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
