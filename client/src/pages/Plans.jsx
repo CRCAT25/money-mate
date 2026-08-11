@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, LoaderCircle, X } from 'lucide-react';
+import { Check, LoaderCircle, Pencil, X } from 'lucide-react';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import Skeleton from '../components/ui/Skeleton.jsx';
@@ -19,9 +19,8 @@ export default function Plans() {
   const [data, setData] = useState(emptyPlan);
   const [draftAmounts, setDraftAmounts] = useState({});
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState(null);
-  const [deletingId, setDeletingId] = useState(null);
-  const [savedId, setSavedId] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const cacheKey = `plans:${month}`;
@@ -47,103 +46,91 @@ export default function Plans() {
     return () => { active = false; };
   }, [month, revision, notify, getCache, setCache]);
 
-  const updateLocalPlan = (categoryId, changes) => {
-    setData((current) => {
-      const items = current.items.map((item) => item.category.id === categoryId ? { ...item, ...changes } : item);
-      const nextData = summarizePlan(current, items);
-      setCache(`plans:${month}`, { data: nextData, revision });
-      return nextData;
-    });
+  const openEditor = () => {
+    setDraftAmounts(createDraftAmounts(data.items));
+    setEditing(true);
   };
 
-  const saveBudget = async (item) => {
-    const rawAmount = draftAmounts[item.category.id] || '';
-    const amount = Number(rawAmount);
-    if (!rawAmount || !Number.isInteger(amount) || amount < 1) {
-      setDraftAmounts((current) => ({ ...current, [item.category.id]: item.amount ? String(item.amount) : '' }));
+  const closeEditor = () => {
+    setDraftAmounts(createDraftAmounts(data.items));
+    setEditing(false);
+  };
+
+  const savePlan = async () => {
+    const changes = data.items.map((item) => {
+      const rawAmount = draftAmounts[item.category.id] || '';
+      const amount = rawAmount ? Number(rawAmount) : 0;
+      return { item, amount };
+    }).filter(({ item, amount }) => amount !== item.amount);
+
+    if (changes.some(({ amount }) => !Number.isInteger(amount) || amount < 0 || amount > 999999999999)) {
+      notify('Ngân sách không hợp lệ.', 'error');
       return;
     }
-    if (item.id && amount === item.amount) return;
-
-    setSavingId(item.category.id);
-    try {
-      const { data: response } = await api.post('/budgets', { month, categoryId: item.category.id, amount });
-      updateLocalPlan(item.category.id, {
-        id: response.id,
-        month,
-        amount,
-        remaining: amount - item.spent,
-        percentage: Math.round((item.spent / amount) * 100),
-      });
-      setSavedId(item.category.id);
-      window.setTimeout(() => setSavedId((current) => current === item.category.id ? null : current), 1200);
-    } catch (error) {
-      setDraftAmounts((current) => ({ ...current, [item.category.id]: item.amount ? String(item.amount) : '' }));
-      notify(errorMessage(error), 'error');
-    } finally {
-      setSavingId(null);
+    if (!changes.length) {
+      setEditing(false);
+      return;
     }
-  };
 
-  const removeBudget = async (item) => {
-    if (!item.id || !window.confirm(`Xóa ngân sách cho ${item.category.name}?`)) return;
-    setDeletingId(item.category.id);
+    setSaving(true);
     try {
-      await api.delete(`/budgets/${item.id}`);
-      setDraftAmounts((current) => ({ ...current, [item.category.id]: '' }));
-      updateLocalPlan(item.category.id, {
-        id: null,
-        amount: 0,
-        remaining: -item.spent,
-        percentage: 0,
-      });
+      await Promise.all(changes.map(({ item, amount }) => {
+        if (!amount && item.id) return api.delete(`/budgets/${item.id}`);
+        if (amount) return api.post('/budgets', { month, categoryId: item.category.id, amount });
+        return Promise.resolve();
+      }));
+      const { data: nextData } = await api.get('/budgets', { params: { month } });
+      setData(nextData);
+      setDraftAmounts(createDraftAmounts(nextData.items));
+      setCache(`plans:${month}`, { data: nextData, revision });
+      setEditing(false);
+      notify('Đã cập nhật kế hoạch chi tiêu.');
     } catch (error) {
       notify(errorMessage(error), 'error');
     } finally {
-      setDeletingId(null);
+      setSaving(false);
     }
   };
+
+  const draftTotal = Object.values(draftAmounts).reduce((total, amount) => total + Number(amount || 0), 0);
 
   return (
     <div className="mx-auto max-w-3xl space-y-3 sm:space-y-4">
-      <header className="flex min-h-9 items-center justify-center">
-        <h1 className="font-editorial text-[21px] font-semibold tracking-[-0.025em] text-ink sm:text-2xl">Kế hoạch chi tiêu</h1>
+      <header className="grid min-h-9 grid-cols-[36px_minmax(0,1fr)_36px] items-center gap-2">
+        {editing ? (
+          <button type="button" className="grid size-9 place-items-center rounded-[11px] bg-white/80 text-ink/55 shadow-sm transition active:scale-95" onClick={closeEditor} disabled={saving} aria-label="Hủy chỉnh sửa">
+            <X className="size-[18px]" strokeWidth={2.2} />
+          </button>
+        ) : <span />}
+        <h1 className="truncate text-center font-editorial text-[21px] font-semibold tracking-[-0.025em] text-ink sm:text-2xl">{editing ? 'Chỉnh sửa ngân sách' : 'Kế hoạch chi tiêu'}</h1>
+        <button
+          type="button"
+          className={`grid size-9 place-items-center rounded-[11px] shadow-sm transition active:scale-95 ${editing ? 'bg-[#3B82D0] text-white' : 'bg-white/80 text-ink/55'}`}
+          onClick={editing ? savePlan : openEditor}
+          disabled={saving || loading}
+          aria-label={editing ? 'Lưu kế hoạch' : 'Chỉnh sửa kế hoạch'}
+        >
+          {saving ? <LoaderCircle className="size-[18px] animate-spin" /> : editing ? <Check className="size-[19px]" strokeWidth={2.5} /> : <Pencil className="size-[16px]" strokeWidth={2.1} />}
+        </button>
       </header>
 
       <div>
         <MonthPicker value={month} onChange={setMonth} dense fullWidth variant="budget" />
       </div>
 
-      {loading ? <PlanPageSkeleton /> : (
+      {loading ? <PlanPageSkeleton editing={editing} /> : editing ? (
+        <BudgetEditor
+          items={data.items}
+          currency={family.currency}
+          draftAmounts={draftAmounts}
+          total={draftTotal}
+          saving={saving}
+          onChange={(categoryId, value) => setDraftAmounts((current) => ({ ...current, [categoryId]: value }))}
+        />
+      ) : (
         <>
           <BudgetSummary data={data} currency={family.currency} />
-
-          <section className="space-y-2">
-            <div className="flex items-end justify-between gap-3 px-1">
-              <div>
-                <h2 className="text-sm font-extrabold tracking-[-0.015em] text-ink">Ngân sách theo danh mục</h2>
-                <p className="mt-0.5 text-[10px] font-semibold text-ink/38">Chạm vào số tiền để chỉnh sửa</p>
-              </div>
-              <span className="pb-0.5 text-[10px] font-bold text-ink/32">{data.items.filter((item) => item.id).length}/{data.items.length} đã nhập</span>
-            </div>
-            <div className="grid overflow-hidden rounded-[16px] border border-ink/[0.07] bg-paper/90 px-3 shadow-card sm:grid-cols-2 sm:gap-x-5 sm:px-4">
-              {data.items.map((item, index) => (
-                <BudgetInputRow
-                  key={item.category.id}
-                  item={item}
-                  currency={family.currency}
-                  value={draftAmounts[item.category.id] || ''}
-                  index={index}
-                  saving={savingId === item.category.id}
-                  deleting={deletingId === item.category.id}
-                  saved={savedId === item.category.id}
-                  onChange={(value) => setDraftAmounts((current) => ({ ...current, [item.category.id]: value }))}
-                  onSave={() => saveBudget(item)}
-                  onDelete={() => removeBudget(item)}
-                />
-              ))}
-            </div>
-          </section>
+          <BudgetOverview items={data.items} currency={family.currency} onEdit={openEditor} />
         </>
       )}
     </div>
@@ -152,77 +139,161 @@ export default function Plans() {
 
 function BudgetSummary({ data, currency }) {
   const over = data.remaining < 0;
+  const hasBudget = data.planned > 0;
+  const spentPercentage = hasBudget ? Math.min(100, Math.max(0, (data.spent / data.planned) * 100)) : 0;
+  const remainingPercentage = hasBudget ? Math.max(0, 100 - spentPercentage) : 0;
+  const percentage = hasBudget ? Math.round((data.spent / data.planned) * 100) : 0;
 
   return (
     <section className="overflow-hidden rounded-[16px] border border-ink/[0.07] bg-paper/90 px-4 py-3 shadow-card sm:px-5">
       <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <h2 className="text-sm font-extrabold tracking-[-0.015em] text-ink">Tổng ngân sách</h2>
-          <p className="mt-1 truncate text-[10px] font-semibold text-ink/38">
-            Đã chi {formatMoney(data.spent, currency)} · {over ? 'Vượt' : 'Còn'} {formatMoney(Math.abs(data.remaining), currency)}
-          </p>
+        <h2 className="text-sm font-semibold tracking-[-0.015em] text-ink">Tổng ngân sách</h2>
+        <div className={`shrink-0 whitespace-nowrap text-right text-xs font-normal ${over ? 'text-[#E45757]' : 'text-ink/56'}`}>
+          {over ? 'Vượt' : 'Còn lại'}: <strong className="font-medium text-ink">{formatMoney(Math.abs(data.remaining), currency)}</strong>
         </div>
-        <div className="shrink-0 whitespace-nowrap text-right text-lg font-normal tracking-[-0.02em] text-ink sm:text-xl">{formatMoney(data.planned, currency)}</div>
+      </div>
+
+      <div className="mt-3 flex items-center gap-3">
+        <div
+          className="flex h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-ink/[0.06]"
+          role="img"
+          aria-label={`Đã chi ${formatMoney(data.spent, currency)}, ${over ? 'vượt' : 'còn'} ${formatMoney(Math.abs(data.remaining), currency)}`}
+        >
+          <span className="h-full bg-[#E45757] transition-[width] duration-700 ease-out" style={{ width: `${spentPercentage}%` }} />
+          <span className="h-full bg-[#3B82D0] transition-[width] duration-700 ease-out" style={{ width: `${remainingPercentage}%` }} />
+        </div>
+        <span className={`w-9 shrink-0 text-right text-[11px] font-normal tabular-nums ${over ? 'text-[#E45757]' : 'text-ink/38'}`}>{percentage}%</span>
+      </div>
+
+      <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-normal text-ink/38">
+        <span className="truncate">Ngân sách <strong className="font-normal text-ink/62">{formatMoney(data.planned, currency)}</strong></span>
+        <span className="truncate text-right">Chi tiêu <strong className="font-normal text-ink/62">{formatMoney(data.spent, currency)}</strong></span>
       </div>
     </section>
   );
 }
 
-function BudgetInputRow({ item, currency, value, index, saving, deleting, saved, onChange, onSave, onDelete }) {
-  const currencyLabel = currency === 'VND' ? '₫' : currency;
-  const inputId = `budget-${item.category.id}`;
+function BudgetOverview({ items, currency, onEdit }) {
+  const plannedItems = items.filter((item) => item.id);
+  if (!plannedItems.length) {
+    return (
+      <section className="rounded-[16px] border border-ink/[0.065] bg-paper/90 px-5 py-8 text-center shadow-card">
+        <div className="text-sm font-medium text-ink">Chưa có ngân sách tháng này</div>
+        <p className="mx-auto mt-1.5 max-w-xs text-[11px] leading-5 text-ink/42">Thiết lập ngân sách theo danh mục để theo dõi số đã chi và phần còn lại.</p>
+        <button type="button" className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-[11px] bg-[#3B82D0] px-4 text-xs font-medium text-white shadow-sm" onClick={onEdit}><Pencil className="size-3.5" /> Thiết lập ngân sách</button>
+      </section>
+    );
+  }
 
   return (
-    <article className="group animate-rise-in flex min-h-[52px] items-center gap-2.5 border-b border-ink/[0.07] py-2 last:border-b-0 sm:min-h-[56px] sm:py-2.5 sm:[&:nth-last-child(-n+2)]:border-b-0" style={{ animationDelay: `${Math.min(index * 24, 180)}ms` }}>
-      <span className="grid size-8 shrink-0 place-items-center rounded-[10px] sm:size-9" style={{ color: item.category.color, backgroundColor: `${item.category.color}12` }}>
-        <CategoryIcon name={item.category.icon} className="size-[17px] sm:size-[18px]" strokeWidth={2.15} />
-      </span>
-      <label htmlFor={inputId} className="min-w-0 flex-1 cursor-text truncate text-[13px] font-medium tracking-[-0.01em] text-ink sm:text-sm">{item.category.name}</label>
-      <div className="relative w-[126px] shrink-0 border-b border-ink/10 sm:w-[142px]">
-        <label htmlFor={inputId} className="sr-only">Ngân sách {item.category.name}</label>
-        <input
-          id={inputId}
-          className="h-9 w-full border-0 bg-transparent pl-1 pr-8 text-right text-[13px] font-normal tracking-[-0.01em] text-ink shadow-none placeholder:text-[10px] placeholder:font-normal placeholder:text-ink/25 focus:border-0 focus:bg-transparent focus:outline-none focus:ring-0 sm:text-sm"
-          type="text"
-          inputMode="numeric"
-          value={formatInputAmount(value)}
-          onChange={(event) => onChange(event.target.value.replace(/\D/g, '').slice(0, 12))}
-          onFocus={(event) => event.currentTarget.select()}
-          onBlur={onSave}
-          onKeyDown={(event) => event.key === 'Enter' && event.currentTarget.blur()}
-          placeholder="Nhập tiền"
-          disabled={saving || deleting}
-        />
-        <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[11px] font-normal text-ink/35">
-          {saving || deleting ? <LoaderCircle className="size-3.5 animate-spin" /> : saved ? <Check className="size-3.5 text-forest" strokeWidth={3} /> : currencyLabel}
-        </span>
-        {item.id && !saving && !deleting && (
-          <button
-            type="button"
-            className="absolute -right-0.5 -top-1 grid size-4 place-items-center rounded-full bg-ink/8 text-ink/35 opacity-0 transition hover:bg-coral/12 hover:text-coral group-focus-within:opacity-100 group-hover:opacity-100"
-            onPointerDown={(event) => event.preventDefault()}
-            onClick={onDelete}
-            aria-label={`Xóa ngân sách ${item.category.name}`}
-          >
-            <X className="size-2.5" strokeWidth={3} />
-          </button>
-        )}
+    <section className="space-y-2">
+      <div className="flex items-center justify-between gap-3 px-1">
+        <h2 className="text-sm font-semibold tracking-[-0.015em] text-ink">Chi tiết ngân sách</h2>
+        <span className="text-[10px] font-normal text-ink/35">{plannedItems.length} hạng mục</span>
+      </div>
+      <div className="overflow-hidden rounded-[16px] border border-ink/[0.065] bg-paper/90 px-3.5 shadow-card sm:px-4">
+        {plannedItems.map((item, index) => <BudgetViewRow key={item.category.id} item={item} currency={currency} index={index} />)}
+      </div>
+    </section>
+  );
+}
+
+function BudgetViewRow({ item, currency, index }) {
+  const over = item.remaining < 0;
+  const percentage = Math.round((item.spent / item.amount) * 100);
+  const spentPercentage = Math.min(100, Math.max(0, (item.spent / item.amount) * 100));
+  const remainingPercentage = Math.max(0, 100 - spentPercentage);
+
+  return (
+    <article className="animate-rise-in border-b border-ink/[0.07] py-3 last:border-b-0" style={{ animationDelay: `${Math.min(index * 30, 180)}ms` }}>
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="grid size-8 shrink-0 place-items-center rounded-[10px]" style={{ color: item.category.color, backgroundColor: `${item.category.color}12` }}>
+            <CategoryIcon name={item.category.icon} className="size-[17px]" strokeWidth={2.15} />
+          </span>
+          <span className="min-w-0 truncate text-sm font-medium tracking-[-0.015em] text-ink">{item.category.name}</span>
+        </div>
+        <div className={`shrink-0 whitespace-nowrap text-right text-[10px] font-normal ${over ? 'text-[#E45757]' : 'text-ink/42'}`}>
+          {over ? 'Vượt' : 'Còn lại'}: <strong className={`text-xs font-medium ${over ? 'text-[#E45757]' : 'text-ink/78'}`}>{formatMoney(Math.abs(item.remaining), currency)}</strong>
+        </div>
+      </div>
+      <div className="mt-2.5 flex items-center gap-2.5">
+        <div className="flex h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-ink/[0.055]" role="img" aria-label={`${item.category.name}: đã dùng ${percentage}% ngân sách`}>
+          <span className="h-full bg-[#E45757] transition-[width] duration-700 ease-out" style={{ width: `${spentPercentage}%` }} />
+          <span className="h-full bg-[#3B82D0] transition-[width] duration-700 ease-out" style={{ width: `${remainingPercentage}%` }} />
+        </div>
+        <span className={`w-9 shrink-0 text-right text-[10px] font-normal tabular-nums ${over ? 'text-[#E45757]' : 'text-ink/35'}`}>{percentage}%</span>
+      </div>
+      <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] font-normal text-ink/34">
+        <span className="truncate">Ngân sách <strong className="font-normal text-ink/58">{formatMoney(item.amount, currency)}</strong></span>
+        <span className="truncate text-right">Thực tế <strong className="font-normal text-ink/58">{formatMoney(item.spent, currency)}</strong></span>
       </div>
     </article>
   );
 }
 
-function PlanPageSkeleton() {
+function BudgetEditor({ items, currency, draftAmounts, total, saving, onChange }) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-4 rounded-[16px] border border-ink/[0.065] bg-paper/90 px-4 py-3 shadow-card">
+        <span className="text-sm font-medium text-ink">Tổng ngân sách</span>
+        <span className="shrink-0 whitespace-nowrap text-base font-normal tabular-nums text-ink">{formatMoney(total, currency)}</span>
+      </div>
+      <p className="px-1 text-[10px] font-normal text-ink/38">Tổng được tự động tính từ các hạng mục bên dưới.</p>
+      <div className="overflow-hidden rounded-[16px] border border-ink/[0.065] bg-paper/90 px-3.5 shadow-card sm:px-4">
+        {items.map((item, index) => (
+          <BudgetEditRow
+            key={item.category.id}
+            item={item}
+            currency={currency}
+            value={draftAmounts[item.category.id] || ''}
+            index={index}
+            disabled={saving}
+            onChange={(value) => onChange(item.category.id, value)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function BudgetEditRow({ item, currency, value, index, disabled, onChange }) {
+  const currencyLabel = currency === 'VND' ? '₫' : currency;
+  const inputId = `budget-${item.category.id}`;
+  return (
+    <article className="animate-rise-in flex min-h-[54px] items-center gap-2.5 border-b border-ink/[0.07] py-2 last:border-b-0" style={{ animationDelay: `${Math.min(index * 24, 160)}ms` }}>
+      <span className="grid size-8 shrink-0 place-items-center rounded-[10px]" style={{ color: item.category.color, backgroundColor: `${item.category.color}12` }}>
+        <CategoryIcon name={item.category.icon} className="size-[17px]" strokeWidth={2.15} />
+      </span>
+      <label htmlFor={inputId} className="min-w-0 flex-1 cursor-text truncate text-sm font-medium tracking-[-0.015em] text-ink">{item.category.name}</label>
+      <div className="relative w-[130px] shrink-0 border-b border-ink/10 sm:w-[150px]">
+        <input
+          id={inputId}
+          className="h-9 w-full border-0 bg-transparent pl-1 pr-6 text-right text-sm font-normal tabular-nums tracking-[-0.015em] text-ink shadow-none placeholder:text-[10px] placeholder:font-normal placeholder:text-ink/24 focus:border-0 focus:bg-transparent focus:outline-none focus:ring-0"
+          type="text"
+          inputMode="numeric"
+          value={formatInputAmount(value)}
+          onChange={(event) => onChange(event.target.value.replace(/\D/g, '').slice(0, 12))}
+          onFocus={(event) => event.currentTarget.select()}
+          placeholder="Nhập tiền"
+          disabled={disabled}
+        />
+        <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[10px] font-normal text-ink/32">{currencyLabel}</span>
+      </div>
+    </article>
+  );
+}
+
+function PlanPageSkeleton({ editing }) {
   return (
     <div className="space-y-3" aria-label="Đang tải ngân sách" role="status">
       <Skeleton className="h-[62px] rounded-[16px]" />
-      <div className="flex items-center justify-between px-1"><Skeleton className="h-4 w-40" /><Skeleton className="h-3 w-16" /></div>
-      <div className="grid overflow-hidden rounded-[16px] border border-ink/[0.06] bg-white/50 px-3 sm:grid-cols-2 sm:gap-x-5 sm:px-4">
+      {!editing && <div className="flex items-center justify-between px-1"><Skeleton className="h-4 w-36" /><Skeleton className="h-3 w-16" /></div>}
+      <div className="overflow-hidden rounded-[16px] border border-ink/[0.06] bg-white/50 px-3.5">
         {Array.from({ length: 10 }, (_, index) => (
-          <div key={index} className="flex min-h-[52px] items-center gap-2.5 border-b border-ink/[0.06] py-2 last:border-0">
-            <Skeleton className="size-8 shrink-0 rounded-[10px]" />
-            <Skeleton className="h-3.5 flex-1" />
-            <Skeleton className="h-8 w-28 rounded-md" />
+          <div key={index} className="border-b border-ink/[0.06] py-3 last:border-0">
+            <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2.5"><Skeleton className="size-8 shrink-0 rounded-[10px]" /><Skeleton className="h-3.5 w-24" /></div><Skeleton className="h-3.5 w-24" /></div>
+            {!editing && <><div className="mt-2.5 flex items-center gap-2.5"><Skeleton className="h-1.5 flex-1 rounded-full" /><Skeleton className="h-3 w-8" /></div><div className="mt-2 flex items-center justify-between"><Skeleton className="h-3 w-28" /><Skeleton className="h-3 w-24" /></div></>}
           </div>
         ))}
       </div>
@@ -232,20 +303,6 @@ function PlanPageSkeleton() {
 
 function createDraftAmounts(items) {
   return Object.fromEntries(items.map((item) => [item.category.id, item.id ? String(item.amount) : '']));
-}
-
-function summarizePlan(current, items) {
-  const plannedItems = items.filter((item) => item.id);
-  const planned = plannedItems.reduce((total, item) => total + Number(item.amount), 0);
-  const spent = plannedItems.reduce((total, item) => total + Number(item.spent), 0);
-  return {
-    ...current,
-    items,
-    planned,
-    spent,
-    remaining: planned - spent,
-    percentage: planned ? Math.round((spent / planned) * 100) : 0,
-  };
 }
 
 function formatInputAmount(value) {

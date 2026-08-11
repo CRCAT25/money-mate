@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import api, { errorMessage } from '../utils/api.js';
-import { compactMoney, currentMonth, formatMoney } from '../utils/formatters.js';
+import { currentMonth, formatMoney } from '../utils/formatters.js';
 
 export default function Reports() {
   const { family } = useAuth();
@@ -97,7 +97,7 @@ export default function Reports() {
 
         <div className="rounded-[18px] border border-ink/[0.06] bg-paper/85 p-4 shadow-card sm:p-5">
           <div className="flex items-start justify-between gap-3"><div><p className="mb-2 text-xs font-extrabold uppercase tracking-[0.15em] text-ink/35">Cơ cấu tháng này</p><h2 className="section-title">Theo từng danh mục</h2></div><div className="flex rounded-xl bg-ink/[0.05] p-1">{[['expense', 'Chi'], ['income', 'Thu']].map(([value, label]) => <button key={value} onClick={() => { setType(value); setCategoryId(''); }} className={`min-h-9 rounded-lg px-3 text-xs font-extrabold ${type === value ? 'bg-white text-ink shadow-sm' : 'text-ink/40'}`}>{label}</button>)}</div></div>
-          {contentLoading ? <ChartSkeleton type="pie" /> : chartCategories.length ? <div className="mt-4 grid items-center sm:grid-cols-[220px_1fr]"><div className="relative h-56"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={chartCategories} dataKey="amount" innerRadius={55} outerRadius={84} paddingAngle={3} stroke="none">{chartCategories.map((item) => <Cell key={item.id} fill={item.color} />)}</Pie><Tooltip formatter={(value) => formatMoney(value, family.currency)} contentStyle={{ borderRadius: 16, border: 'none', fontSize: 12 }} /></PieChart></ResponsiveContainer></div><div className="space-y-3">{chartCategories.slice(0, 6).map((item) => <div key={item.id} className="flex items-center gap-3 text-sm"><span className="size-2.5 rounded-full" style={{ backgroundColor: item.color }} /><span className="flex-1 truncate font-medium text-ink/60">{item.name}</span><span className="font-normal text-ink">{compactMoney(item.amount, family.currency)}</span></div>)}</div></div> : <div className="grid h-64 place-items-center text-sm font-semibold text-ink/35">Chưa có dữ liệu cho phần này.</div>}
+          {contentLoading ? <ChartSkeleton type="pie" /> : chartCategories.length ? <div className="mt-4 grid items-center sm:grid-cols-[220px_1fr]"><div className="relative h-56"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={chartCategories} dataKey="amount" innerRadius={55} outerRadius={84} paddingAngle={3} stroke="none">{chartCategories.map((item) => <Cell key={item.id} fill={item.color} />)}</Pie><Tooltip formatter={(value) => formatMoney(value, family.currency)} contentStyle={{ borderRadius: 16, border: 'none', fontSize: 12 }} /></PieChart></ResponsiveContainer></div><div className="space-y-3">{chartCategories.slice(0, 6).map((item) => <div key={item.id} className="flex items-center gap-3 text-sm"><span className="size-2.5 rounded-full" style={{ backgroundColor: item.color }} /><span className="flex-1 truncate font-medium text-ink/60">{item.name}</span><span className="shrink-0 whitespace-nowrap font-normal text-ink">{formatMoney(item.amount, family.currency)}</span></div>)}</div></div> : <div className="grid h-64 place-items-center text-sm font-semibold text-ink/35">Chưa có dữ liệu cho phần này.</div>}
         </div>
       </section>
 
