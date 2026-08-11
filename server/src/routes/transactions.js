@@ -15,7 +15,6 @@ const transactionRules = [
   body('amount').isInt({ min: 1, max: 999999999999 }).withMessage('Số tiền cần lớn hơn 0.'),
   body('categoryId').isUUID().withMessage('Danh mục không hợp lệ.'),
   body('transactionDate').isISO8601({ strict: true }).withMessage('Ngày giao dịch không hợp lệ.'),
-  body('assignedTo').isUUID().withMessage('Người thực hiện không hợp lệ.'),
   body('note').optional({ nullable: true }).trim().isLength({ max: 240 }).withMessage('Ghi chú tối đa 240 ký tự.'),
 ];
 
@@ -88,7 +87,7 @@ router.post('/', transactionRules, validate, async (req, res) => {
     req.user.familyId,
     req.body.categoryId,
     req.user.id,
-    req.body.assignedTo,
+    req.user.id,
     req.body.type,
     req.body.amount,
     req.body.transactionDate.slice(0, 10),
@@ -106,12 +105,11 @@ router.patch('/:id', [param('id').isUUID(), ...transactionRules], validate, asyn
 
   const result = await db.prepare(`
     UPDATE transactions SET
-      category_id = ?, assigned_to = ?, type = ?, amount = ?, transaction_date = ?,
+      category_id = ?, type = ?, amount = ?, transaction_date = ?,
       note = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND family_id = ?
   `).run(
     req.body.categoryId,
-    req.body.assignedTo,
     req.body.type,
     req.body.amount,
     req.body.transactionDate.slice(0, 10),
@@ -139,8 +137,6 @@ async function validateRelations(db, familyId, data) {
   const category = await db.prepare('SELECT type FROM categories WHERE id = ? AND family_id = ?').get(data.categoryId, familyId);
   if (!category) return { status: 404, message: 'Không tìm thấy danh mục.' };
   if (category.type !== data.type) return { status: 422, message: 'Danh mục không phù hợp với loại giao dịch.' };
-  const member = await db.prepare('SELECT 1 FROM family_members WHERE family_id = ? AND user_id = ?').get(familyId, data.assignedTo);
-  if (!member) return { status: 422, message: 'Người thực hiện không thuộc gia đình này.' };
   return null;
 }
 
@@ -163,9 +159,25 @@ function mapTransaction(transaction) {
       avatarUrl: transaction.assigned_avatar,
     },
     createdBy: transaction.created_by,
-    createdAt: transaction.created_at,
-    updatedAt: transaction.updated_at,
+    createdAt: normalizeTimestamp(transaction.created_at),
+    updatedAt: normalizeTimestamp(transaction.updated_at),
   };
+}
+
+// Normalize SQLite and PostgreSQL timestamp text into one browser-safe ISO format.
+function normalizeTimestamp(value) {
+  if (!value) return null;
+  let text = String(value).trim().replace(' ', 'T');
+  text = text.replace(/(\.\d{3})\d+/, '$1');
+  if (/([+-]\d{4})$/.test(text)) {
+    text = `${text.slice(0, -2)}:${text.slice(-2)}`;
+  } else if (/([+-]\d{2})$/.test(text)) {
+    text = `${text}:00`;
+  } else if (!/(Z|[+-]\d{2}:\d{2})$/.test(text)) {
+    text += 'Z';
+  }
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 export default router;

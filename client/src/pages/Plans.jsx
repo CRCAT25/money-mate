@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { LoaderCircle, Trash2, WalletCards } from 'lucide-react';
+import { Check, LoaderCircle, X } from 'lucide-react';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import Skeleton from '../components/ui/Skeleton.jsx';
@@ -21,6 +21,7 @@ export default function Plans() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [savedId, setSavedId] = useState(null);
 
   useEffect(() => {
     const cacheKey = `plans:${month}`;
@@ -74,6 +75,8 @@ export default function Plans() {
         remaining: amount - item.spent,
         percentage: Math.round((item.spent / amount) * 100),
       });
+      setSavedId(item.category.id);
+      window.setTimeout(() => setSavedId((current) => current === item.category.id ? null : current), 1200);
     } catch (error) {
       setDraftAmounts((current) => ({ ...current, [item.category.id]: item.amount ? String(item.amount) : '' }));
       notify(errorMessage(error), 'error');
@@ -102,25 +105,28 @@ export default function Plans() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 sm:space-y-5">
-      <header className="flex min-h-10 items-center justify-center">
-        <h1 className="font-editorial text-[24px] font-semibold tracking-[-0.025em] text-ink sm:text-3xl">Kế hoạch chi tiêu</h1>
+    <div className="mx-auto max-w-3xl space-y-3 sm:space-y-4">
+      <header className="flex min-h-9 items-center justify-center">
+        <h1 className="font-editorial text-[21px] font-semibold tracking-[-0.025em] text-ink sm:text-2xl">Kế hoạch chi tiêu</h1>
       </header>
 
       <div>
-        <MonthPicker value={month} onChange={setMonth} dense fullWidth />
+        <MonthPicker value={month} onChange={setMonth} dense fullWidth variant="budget" />
       </div>
 
       {loading ? <PlanPageSkeleton /> : (
         <>
           <BudgetSummary data={data} currency={family.currency} />
 
-          <section>
-            <div className="mb-3 px-1">
-              <h2 className="font-editorial text-[26px] font-semibold tracking-[-0.02em] text-ink">Kế hoạch chi tiết</h2>
-              <p className="mt-1 text-xs font-semibold text-ink/40">Nhập số tiền cho từng danh mục, hệ thống sẽ tự lưu khi bạn rời ô nhập.</p>
+          <section className="space-y-2">
+            <div className="flex items-end justify-between gap-3 px-1">
+              <div>
+                <h2 className="text-sm font-extrabold tracking-[-0.015em] text-ink">Ngân sách theo danh mục</h2>
+                <p className="mt-0.5 text-[10px] font-semibold text-ink/38">Chạm vào số tiền để chỉnh sửa</p>
+              </div>
+              <span className="pb-0.5 text-[10px] font-bold text-ink/32">{data.items.filter((item) => item.id).length}/{data.items.length} đã nhập</span>
             </div>
-            <div className="overflow-hidden rounded-[18px] border border-ink/[0.06] bg-white/70 px-3 shadow-sm backdrop-blur sm:px-5">
+            <div className="grid overflow-hidden rounded-[16px] border border-ink/[0.07] bg-paper/90 px-3 shadow-card sm:grid-cols-2 sm:gap-x-5 sm:px-4">
               {data.items.map((item, index) => (
                 <BudgetInputRow
                   key={item.category.id}
@@ -130,6 +136,7 @@ export default function Plans() {
                   index={index}
                   saving={savingId === item.category.id}
                   deleting={deletingId === item.category.id}
+                  saved={savedId === item.category.id}
                   onChange={(value) => setDraftAmounts((current) => ({ ...current, [item.category.id]: value }))}
                   onSave={() => saveBudget(item)}
                   onDelete={() => removeBudget(item)}
@@ -144,107 +151,78 @@ export default function Plans() {
 }
 
 function BudgetSummary({ data, currency }) {
-  const plannedCount = data.items.filter((item) => item.id).length;
   const over = data.remaining < 0;
-  const progress = Math.min(data.percentage, 100);
 
   return (
-    <section className="rounded-[18px] border border-ink/[0.06] bg-white/75 p-4 shadow-sm backdrop-blur sm:p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-coral/10 text-coral"><WalletCards className="size-[18px]" /></span>
-          <div className="min-w-0 flex-1">
-            <h2 className="font-editorial text-[20px] font-semibold leading-tight text-ink sm:text-[22px]">Tổng ngân sách</h2>
-            <p className="mt-2 text-xs font-bold text-ink/35">{plannedCount}/{data.items.length} danh mục đã nhập</p>
-          </div>
+    <section className="overflow-hidden rounded-[16px] border border-ink/[0.07] bg-paper/90 px-4 py-3 shadow-card sm:px-5">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="text-sm font-extrabold tracking-[-0.015em] text-ink">Tổng ngân sách</h2>
+          <p className="mt-1 truncate text-[10px] font-semibold text-ink/38">
+            Đã chi {formatMoney(data.spent, currency)} · {over ? 'Vượt' : 'Còn'} {formatMoney(Math.abs(data.remaining), currency)}
+          </p>
         </div>
-        <div className="shrink-0 whitespace-nowrap text-right">
-          <div className="text-[11px] font-bold text-ink/38">{over ? 'Vượt mức' : 'Còn lại'}</div>
-          <div className={`mt-0.5 text-lg font-black tracking-[-0.02em] ${over ? 'text-coral' : 'text-ink'}`}>{formatMoney(Math.abs(data.remaining), currency)}</div>
-        </div>
-      </div>
-      <ProgressBar percentage={progress} color={over ? '#E26F54' : '#2D8A72'} className="mt-4" />
-      <div className="mt-3 grid grid-cols-[1fr_auto] items-end gap-4">
-        <div className="text-xs font-semibold text-ink/38">Ngân sách <strong className="ml-1 text-ink/65">{formatMoney(data.planned, currency)}</strong></div>
-        <div className="text-right">
-          <div className={`text-sm font-black ${over ? 'text-coral' : 'text-ink/55'}`}>{data.percentage}%</div>
-          <div className="mt-1 text-xs font-semibold text-ink/38">Chi tiêu <strong className="ml-1 text-ink/65">{formatMoney(data.spent, currency)}</strong></div>
-        </div>
+        <div className="shrink-0 whitespace-nowrap text-right text-lg font-normal tracking-[-0.02em] text-ink sm:text-xl">{formatMoney(data.planned, currency)}</div>
       </div>
     </section>
   );
 }
 
-function BudgetInputRow({ item, currency, value, index, saving, deleting, onChange, onSave, onDelete }) {
-  const planned = Boolean(item.id);
-  const over = planned && item.remaining < 0;
-  const progress = planned ? Math.min(item.percentage, 100) : 0;
+function BudgetInputRow({ item, currency, value, index, saving, deleting, saved, onChange, onSave, onDelete }) {
   const currencyLabel = currency === 'VND' ? '₫' : currency;
+  const inputId = `budget-${item.category.id}`;
 
   return (
-    <article className="animate-rise-in border-b border-ink/[0.08] py-4 last:border-b-0 sm:py-5" style={{ animationDelay: `${Math.min(index * 30, 220)}ms` }}>
-      <div className="flex items-center gap-2.5 sm:gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-xl sm:size-10" style={{ color: item.category.color, backgroundColor: `${item.category.color}16` }}>
-          <CategoryIcon name={item.category.icon} className="size-[18px]" strokeWidth={2.25} />
+    <article className="group animate-rise-in flex min-h-[52px] items-center gap-2.5 border-b border-ink/[0.07] py-2 last:border-b-0 sm:min-h-[56px] sm:py-2.5 sm:[&:nth-last-child(-n+2)]:border-b-0" style={{ animationDelay: `${Math.min(index * 24, 180)}ms` }}>
+      <span className="grid size-8 shrink-0 place-items-center rounded-[10px] sm:size-9" style={{ color: item.category.color, backgroundColor: `${item.category.color}12` }}>
+        <CategoryIcon name={item.category.icon} className="size-[17px] sm:size-[18px]" strokeWidth={2.15} />
+      </span>
+      <label htmlFor={inputId} className="min-w-0 flex-1 cursor-text truncate text-[13px] font-medium tracking-[-0.01em] text-ink sm:text-sm">{item.category.name}</label>
+      <div className="relative w-[126px] shrink-0 border-b border-ink/10 sm:w-[142px]">
+        <label htmlFor={inputId} className="sr-only">Ngân sách {item.category.name}</label>
+        <input
+          id={inputId}
+          className="h-9 w-full border-0 bg-transparent pl-1 pr-8 text-right text-[13px] font-normal tracking-[-0.01em] text-ink shadow-none placeholder:text-[10px] placeholder:font-normal placeholder:text-ink/25 focus:border-0 focus:bg-transparent focus:outline-none focus:ring-0 sm:text-sm"
+          type="text"
+          inputMode="numeric"
+          value={formatInputAmount(value)}
+          onChange={(event) => onChange(event.target.value.replace(/\D/g, '').slice(0, 12))}
+          onFocus={(event) => event.currentTarget.select()}
+          onBlur={onSave}
+          onKeyDown={(event) => event.key === 'Enter' && event.currentTarget.blur()}
+          placeholder="Nhập tiền"
+          disabled={saving || deleting}
+        />
+        <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[11px] font-normal text-ink/35">
+          {saving || deleting ? <LoaderCircle className="size-3.5 animate-spin" /> : saved ? <Check className="size-3.5 text-forest" strokeWidth={3} /> : currencyLabel}
         </span>
-        <h3 className="min-w-0 flex-1 truncate text-sm font-bold tracking-[-0.01em] text-ink sm:text-base">{item.category.name}</h3>
-        <label className="relative block w-[126px] shrink-0 sm:w-40">
-          <span className="sr-only">Ngân sách {item.category.name}</span>
-          <input
-            className="h-10 w-full rounded-xl border border-ink/10 bg-white/80 pl-3 pr-9 text-right text-sm font-bold text-ink shadow-none transition placeholder:text-[11px] placeholder:font-semibold placeholder:text-ink/28 focus:border-ink/10 focus:bg-white"
-            type="text"
-            inputMode="numeric"
-            value={formatInputAmount(value)}
-            onChange={(event) => onChange(event.target.value.replace(/\D/g, '').slice(0, 12))}
-            onBlur={onSave}
-            onKeyDown={(event) => event.key === 'Enter' && event.currentTarget.blur()}
-            placeholder="Nhập số tiền"
-            disabled={saving || deleting}
-          />
-          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-extrabold text-ink/30">{saving ? <LoaderCircle className="size-4 animate-spin" /> : currencyLabel}</span>
-        </label>
-      </div>
-
-      <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-4">
-        <ProgressBar percentage={progress} color={over ? '#E26F54' : item.category.color} />
-        <span className={`w-11 text-right text-sm font-extrabold ${over ? 'text-coral' : planned ? 'text-ink/38' : 'text-ink/20'}`}>{planned ? `${item.percentage}%` : '—'}</span>
-      </div>
-      <div className="mt-2 flex items-center justify-between gap-4 text-xs font-semibold">
-        <span className={planned ? over ? 'text-coral' : 'text-forest' : 'text-ink/30'}>
-          {planned ? over ? `Vượt ${formatMoney(Math.abs(item.remaining), currency)}` : `Còn lại ${formatMoney(item.remaining, currency)}` : 'Chưa đặt ngân sách'}
-        </span>
-        <span className="flex items-center gap-1 text-ink/35">
-          Chi tiêu <strong className="ml-1 text-ink/55">{formatMoney(item.spent, currency)}</strong>
-          {planned && (
-            <button type="button" className="ml-1 grid size-7 shrink-0 place-items-center rounded-lg text-ink/22 transition hover:bg-coral/10 hover:text-coral" onClick={onDelete} disabled={saving || deleting} aria-label={`Xóa ngân sách ${item.category.name}`}>
-              {deleting ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-            </button>
-          )}
-        </span>
+        {item.id && !saving && !deleting && (
+          <button
+            type="button"
+            className="absolute -right-0.5 -top-1 grid size-4 place-items-center rounded-full bg-ink/8 text-ink/35 opacity-0 transition hover:bg-coral/12 hover:text-coral group-focus-within:opacity-100 group-hover:opacity-100"
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={onDelete}
+            aria-label={`Xóa ngân sách ${item.category.name}`}
+          >
+            <X className="size-2.5" strokeWidth={3} />
+          </button>
+        )}
       </div>
     </article>
   );
 }
 
-function ProgressBar({ percentage, color, className = '' }) {
-  return (
-    <div className={`h-1.5 overflow-hidden rounded-full bg-ink/[0.06] ${className}`}>
-      <div className="h-full rounded-full transition-[width] duration-700 ease-out" style={{ width: `${percentage}%`, backgroundColor: color }} />
-    </div>
-  );
-}
-
 function PlanPageSkeleton() {
   return (
-    <div className="space-y-5" aria-label="Đang tải ngân sách" role="status">
-      <Skeleton className="h-48 rounded-[28px]" />
-      <div className="space-y-3"><Skeleton className="h-8 w-52" /><Skeleton className="h-4 w-72" /></div>
-      <div className="overflow-hidden rounded-[28px] border border-ink/[0.06] bg-white/50 px-4 sm:px-6">
-        {Array.from({ length: 6 }, (_, index) => (
-          <div key={index} className="flex items-center gap-3 border-b border-ink/[0.06] py-5 last:border-0">
-            <Skeleton className="size-10 shrink-0 rounded-[14px]" />
-            <Skeleton className="h-4 flex-1" />
-            <Skeleton className="h-11 w-32 rounded-[14px]" />
+    <div className="space-y-3" aria-label="Đang tải ngân sách" role="status">
+      <Skeleton className="h-[62px] rounded-[16px]" />
+      <div className="flex items-center justify-between px-1"><Skeleton className="h-4 w-40" /><Skeleton className="h-3 w-16" /></div>
+      <div className="grid overflow-hidden rounded-[16px] border border-ink/[0.06] bg-white/50 px-3 sm:grid-cols-2 sm:gap-x-5 sm:px-4">
+        {Array.from({ length: 10 }, (_, index) => (
+          <div key={index} className="flex min-h-[52px] items-center gap-2.5 border-b border-ink/[0.06] py-2 last:border-0">
+            <Skeleton className="size-8 shrink-0 rounded-[10px]" />
+            <Skeleton className="h-3.5 flex-1" />
+            <Skeleton className="h-8 w-28 rounded-md" />
           </div>
         ))}
       </div>

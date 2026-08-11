@@ -75,7 +75,7 @@ export default function Home() {
       <section className="overflow-hidden rounded-[18px] border border-ink/[0.07] bg-paper/90 shadow-card">
         <div className="grid grid-cols-7 border-b border-ink/[0.07] bg-ink/[0.035]">
           {weekDays.map((day, index) => (
-            <div key={day} className={`py-2 text-center text-[10px] font-extrabold ${index === 5 ? 'text-[#1698bf]' : index === 6 ? 'text-coral' : 'text-ink/45'}`}>{day}</div>
+            <div key={day} className={`py-1.5 text-center text-[10px] font-semibold ${index === 5 ? 'text-[#1698bf]' : index === 6 ? 'text-coral' : 'text-ink/45'}`}>{day}</div>
           ))}
         </div>
         {loading ? <CalendarSkeleton /> : <CashflowCalendar month={month} dailyExpenses={dailyExpenses} />}
@@ -121,10 +121,10 @@ function CashflowCalendar({ month, dailyExpenses }) {
         return (
           <div
             key={dateKey}
-            className={`relative min-h-[48px] border-b border-r border-ink/[0.06] p-1 sm:min-h-[62px] sm:p-1.5 ${inCurrentMonth ? 'bg-white/35' : 'bg-ink/[0.018]'} ${isToday ? 'bg-sun/15' : ''}`}
+            className={`relative min-h-[40px] border-b border-r border-ink/[0.06] p-0.5 sm:min-h-[52px] sm:p-1 ${inCurrentMonth ? 'bg-white/35' : 'bg-ink/[0.018]'} ${isToday ? 'bg-sun/15' : ''}`}
           >
             <span className={`text-[11px] font-bold sm:text-xs ${!inCurrentMonth ? 'text-ink/20' : dayOfWeek === 5 ? 'text-[#1698bf]' : dayOfWeek === 6 ? 'text-coral' : 'text-ink/60'}`}>{date.getUTCDate()}</span>
-            {inCurrentMonth && expense > 0 && <div className="mt-1.5 whitespace-nowrap text-right text-[7px] font-extrabold tracking-[-0.03em] text-coral sm:mt-2 sm:text-[10px]">{formatCalendarAmount(expense)}</div>}
+            {inCurrentMonth && expense > 0 && <div className="mt-1 whitespace-nowrap text-right text-[7px] font-normal tracking-[-0.02em] text-coral sm:mt-1.5 sm:text-[9px]">{formatCalendarAmount(expense)}</div>}
           </div>
         );
       })}
@@ -135,9 +135,9 @@ function CashflowCalendar({ month, dailyExpenses }) {
 function SummaryItem({ label, value, currency, tone, loading }) {
   const valueColor = tone === 'income' ? 'text-[#1698bf]' : 'text-coral';
   return (
-    <div className="min-w-0 border-r border-ink/[0.06] px-1.5 py-3 text-center last:border-r-0 sm:px-4 sm:py-4">
+    <div className="min-w-0 border-r border-ink/[0.06] px-1.5 py-2.5 text-center last:border-r-0 sm:px-4 sm:py-3">
       <div className="text-[9px] font-bold uppercase tracking-[0.08em] text-ink/42 sm:text-[11px]">{label}</div>
-      {loading ? <Skeleton className="mx-auto mt-2 h-4 w-16" /> : <div className={`mt-1 truncate text-xs font-black tracking-[-0.03em] sm:text-lg ${valueColor}`}>{formatMoney(value, currency)}</div>}
+      {loading ? <Skeleton className="mx-auto mt-2 h-4 w-16" /> : <div className={`mt-1 truncate text-xs font-normal tracking-[-0.02em] sm:text-lg ${valueColor}`}>{formatMoney(value, currency)}</div>}
     </div>
   );
 }
@@ -145,7 +145,7 @@ function SummaryItem({ label, value, currency, tone, loading }) {
 function CalendarSkeleton() {
   return (
     <div className="grid grid-cols-7">
-      {Array.from({ length: 42 }, (_, index) => <Skeleton key={index} className="min-h-[48px] rounded-none border-b border-r border-white/50 bg-ink/[0.045] sm:min-h-[62px]" />)}
+      {Array.from({ length: 42 }, (_, index) => <Skeleton key={index} className="min-h-[40px] rounded-none border-b border-r border-white/50 bg-ink/[0.045] sm:min-h-[52px]" />)}
     </div>
   );
 }

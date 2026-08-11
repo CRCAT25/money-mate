@@ -51,7 +51,7 @@ test('family owner can register, verify, login and record a transaction', async 
   const initialSync = await request(app).get('/api/family/sync').set(auth).expect(200);
   assert.deepEqual(initialSync.body, family.body.revisions);
   const ownerId = family.body.members[0].id;
-  await request(app)
+  const createdTransaction = await request(app)
     .post('/api/transactions')
     .set(auth)
     .send({
@@ -59,10 +59,13 @@ test('family owner can register, verify, login and record a transaction', async 
       amount: 125000,
       categoryId: food.id,
       transactionDate: '2026-08-09',
-      assignedTo: ownerId,
+      assignedTo: '00000000-0000-4000-8000-000000000000',
       note: 'Bữa tối',
     })
     .expect(201);
+
+  const transaction = await request(app).get(`/api/transactions/${createdTransaction.body.id}`).set(auth).expect(200);
+  assert.equal(transaction.body.assignedTo.id, ownerId);
 
   const changedSync = await request(app).get('/api/family/sync').set(auth).expect(200);
   assert.equal(changedSync.body.baseRevision, initialSync.body.baseRevision);
