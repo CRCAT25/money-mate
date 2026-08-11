@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowDownLeft, ArrowLeft, ArrowUpRight, CalendarDays, Check, LoaderCircle, Sparkles } from 'lucide-react';
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, LoaderCircle, Pencil, ReceiptText, UserRound } from 'lucide-react';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
 import Skeleton from '../components/ui/Skeleton.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -45,6 +45,12 @@ export default function TransactionForm() {
   }, [form.categoryId, filteredCategories]);
 
   const changeType = (type) => setForm({ ...form, type, categoryId: '' });
+  const changeDate = (days) => {
+    const date = new Date(`${form.transactionDate}T12:00:00`);
+    date.setDate(date.getDate() + days);
+    const nextDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    setForm({ ...form, transactionDate: nextDate });
+  };
   const submit = async (event) => {
     event.preventDefault();
     if (!form.categoryId) return notify('Vui lòng chọn một danh mục.', 'error');
@@ -66,61 +72,101 @@ export default function TransactionForm() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <button onClick={() => navigate(-1)} className="mb-6 flex min-h-11 items-center gap-2 text-sm font-extrabold text-ink/55"><ArrowLeft className="size-4" /> Quay lại</button>
-      <div className="grid gap-7 lg:grid-cols-[1fr_300px]">
-        <section className="rounded-[32px] border border-ink/[0.06] bg-paper/90 p-5 shadow-soft sm:p-8">
-          <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.16em] text-coral">{transactionId ? 'Chỉnh sửa' : 'Ghi lại dòng tiền'}</p>
-          <h1 className="font-editorial text-4xl font-semibold tracking-[-0.03em] text-ink">{transactionId ? 'Cập nhật giao dịch.' : 'Hôm nay có gì mới?'}</h1>
+      <section className="-mx-4 -mt-6 overflow-hidden border-y border-ink/[0.07] bg-paper/95 shadow-soft sm:mx-0 sm:mt-0 sm:rounded-[32px] sm:border">
+        <header className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-3 border-b border-ink/[0.06] px-4 py-4 sm:px-7 sm:py-5">
+          <button type="button" onClick={() => navigate(-1)} className="grid size-11 place-items-center rounded-full bg-white/75 text-ink/55 shadow-sm transition hover:bg-white hover:text-ink" aria-label="Quay lại">
+            <ArrowLeft className="size-5" />
+          </button>
+          <div className="mx-auto grid w-full max-w-[340px] grid-cols-2 rounded-full bg-ink/[0.055] p-1.5">
+            <TypeButton active={form.type === 'expense'} onClick={() => changeType('expense')} label="Tiền chi" />
+            <TypeButton active={form.type === 'income'} onClick={() => changeType('income')} label="Tiền thu" />
+          </div>
+          <span className="grid size-11 place-items-center rounded-full bg-white/75 text-ink/48 shadow-sm" aria-hidden="true">
+            {transactionId ? <Pencil className="size-5" /> : <ReceiptText className="size-5" />}
+          </span>
+        </header>
 
-          <form onSubmit={submit} className="mt-8 space-y-7">
-            <div className="grid grid-cols-2 rounded-[20px] bg-ink/[0.05] p-1.5">
-              <TypeButton active={form.type === 'expense'} onClick={() => changeType('expense')} icon={ArrowUpRight} label="Khoản chi" activeClass="bg-coral text-white shadow-lg shadow-coral/20" />
-              <TypeButton active={form.type === 'income'} onClick={() => changeType('income')} icon={ArrowDownLeft} label="Khoản thu" activeClass="bg-forest text-white shadow-lg shadow-forest/20" />
-            </div>
-
-            <div>
-              <label className="label">Số tiền</label>
-              <div className="relative">
-                <input className="field h-20 pr-20 text-3xl font-extrabold tracking-tight" type="number" inputMode="numeric" min="1" max="999999999999" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="0" autoFocus required />
-                <span className="absolute right-5 top-1/2 -translate-y-1/2 text-sm font-extrabold text-ink/35">{family.currency}</span>
+        <form onSubmit={submit} className="pb-28 lg:pb-0">
+          <div className="divide-y divide-ink/[0.07] px-4 sm:px-7">
+            <div className="grid min-h-[74px] grid-cols-[82px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[130px_minmax(0,1fr)]">
+              <span className="text-sm font-extrabold text-ink/72 sm:text-base">Ngày</span>
+              <div className="grid grid-cols-[42px_minmax(0,1fr)_42px] items-center gap-1">
+                <button type="button" onClick={() => changeDate(-1)} className="grid size-10 place-items-center rounded-xl text-ink/45 transition hover:bg-ink/[0.05] hover:text-ink" aria-label="Ngày trước">
+                  <ChevronLeft className="size-5" />
+                </button>
+                <label className="relative flex min-h-11 cursor-pointer items-center justify-center rounded-xl bg-sun/15 px-2 text-center text-sm font-extrabold text-ink sm:text-base">
+                  <span>{formatTransactionDate(form.transactionDate)}</span>
+                  <input className="absolute inset-0 cursor-pointer opacity-0" type="date" value={form.transactionDate} onChange={(event) => setForm({ ...form, transactionDate: event.target.value })} required aria-label="Ngày giao dịch" />
+                </label>
+                <button type="button" onClick={() => changeDate(1)} className="grid size-10 place-items-center rounded-xl text-ink/45 transition hover:bg-ink/[0.05] hover:text-ink" aria-label="Ngày sau">
+                  <ChevronRight className="size-5" />
+                </button>
               </div>
-              {form.amount > 0 && <p className="mt-2 text-right text-xs font-semibold text-ink/40">{formatMoney(form.amount, family.currency)}</p>}
             </div>
 
-            <div>
-              <label className="label">Danh mục</label>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                {filteredCategories.map((category) => (
-                  <button key={category.id} type="button" onClick={() => setForm({ ...form, categoryId: category.id })} className={`relative flex min-h-[88px] flex-col items-center justify-center gap-2 rounded-[20px] border p-2 text-xs font-extrabold transition ${form.categoryId === category.id ? 'border-forest bg-mint text-forest shadow-sm' : 'border-ink/[0.07] bg-white/60 text-ink/60 hover:bg-white'}`}>
-                    {form.categoryId === category.id && <span className="absolute right-2 top-2 grid size-4 place-items-center rounded-full bg-forest text-white"><Check className="size-3" /></span>}
-                    <span className="grid size-9 place-items-center rounded-xl" style={{ backgroundColor: `${category.color}1F`, color: category.color }}><CategoryIcon name={category.icon} className="size-4" /></span>
-                    <span className="max-w-full truncate">{category.name}</span>
+            <label className="grid min-h-[74px] grid-cols-[82px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[130px_minmax(0,1fr)]">
+              <span className="text-sm font-extrabold text-ink/72 sm:text-base">Ghi chú</span>
+              <input className="min-h-11 min-w-0 bg-transparent px-3 text-[15px] font-semibold text-ink outline-none placeholder:text-ink/25" maxLength="240" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="Chưa nhập vào" />
+            </label>
+
+            <label className="grid min-h-[86px] grid-cols-[82px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[130px_minmax(0,1fr)]">
+              <span className="text-sm font-extrabold text-ink/72 sm:text-base">{form.type === 'expense' ? 'Tiền chi' : 'Tiền thu'}</span>
+              <span className="flex min-w-0 items-center gap-3">
+                <input className="min-h-14 min-w-0 flex-1 rounded-xl bg-sun/15 px-4 text-3xl font-extrabold tracking-[-0.04em] text-ink outline-none placeholder:text-ink/35" type="number" inputMode="numeric" min="1" max="999999999999" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} placeholder="0" autoFocus required />
+                <span className="shrink-0 text-lg font-extrabold text-ink/55">{currencySymbol(family.currency)}</span>
+              </span>
+            </label>
+          </div>
+
+          <div className="px-4 pb-6 pt-7 sm:px-7 sm:pb-8">
+            <div className="mb-4 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-lg font-extrabold text-ink">Danh mục</p>
+                <p className="mt-1 text-xs font-semibold text-ink/38">Chọn mục phù hợp nhất với giao dịch</p>
+              </div>
+              {form.amount > 0 && <p className="shrink-0 text-xs font-extrabold text-coral">{formatMoney(form.amount, family.currency)}</p>}
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+              {filteredCategories.map((category) => {
+                const active = form.categoryId === category.id;
+                return (
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() => setForm({ ...form, categoryId: category.id })}
+                    className={`relative flex min-h-[92px] min-w-0 flex-col items-center justify-center gap-2 rounded-2xl border px-2 py-3 text-xs font-extrabold transition active:scale-[0.98] ${active ? 'border-ink/30 bg-white text-ink shadow-md ring-2 ring-ink/8' : 'border-ink/[0.09] bg-white/55 text-ink/58 hover:border-ink/15 hover:bg-white'}`}
+                  >
+                    {active && <span className="absolute right-2 top-2 grid size-4 place-items-center rounded-full bg-ink text-white"><Check className="size-3" strokeWidth={3} /></span>}
+                    <span className="grid size-10 place-items-center rounded-[14px]" style={{ backgroundColor: `${category.color}18`, color: category.color }}>
+                      <CategoryIcon name={category.icon} className="size-5" strokeWidth={2.2} />
+                    </span>
+                    <span className="w-full truncate text-center">{category.name}</span>
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
 
-            <div className="grid gap-5 sm:grid-cols-2">
-              <label className="block"><span className="label">Ngày giao dịch</span><span className="relative block"><CalendarDays className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-ink/35" /><input className="field pl-12" type="date" value={form.transactionDate} onChange={(e) => setForm({ ...form, transactionDate: e.target.value })} required /></span></label>
-              <label className="block"><span className="label">Người thực hiện</span><select className="field" value={form.assignedTo} onChange={(e) => setForm({ ...form, assignedTo: e.target.value })}>{familyDetails?.members.map((member) => <option key={member.id} value={member.id}>{member.id === user.id ? `${member.displayName} (tôi)` : member.displayName}</option>)}</select></label>
-            </div>
+            <label className="mt-6 flex min-h-14 items-center gap-3 rounded-2xl border border-ink/[0.08] bg-white/55 px-4">
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-mint text-forest"><UserRound className="size-4" /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] font-bold text-ink/35">Người thực hiện</span>
+                <select className="w-full appearance-none bg-transparent py-0.5 text-sm font-extrabold text-ink outline-none" value={form.assignedTo} onChange={(event) => setForm({ ...form, assignedTo: event.target.value })}>
+                  {familyDetails?.members.map((member) => <option key={member.id} value={member.id}>{member.id === user.id ? `${member.displayName} (tôi)` : member.displayName}</option>)}
+                </select>
+              </span>
+            </label>
 
-            <label className="block"><span className="label">Ghi chú <span className="font-medium text-ink/35">(không bắt buộc)</span></span><textarea className="field min-h-24 resize-none py-3" maxLength="240" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Thêm một chút bối cảnh..." /></label>
+            {selectedCategory && <p className="mt-3 text-center text-xs font-semibold text-ink/38">Đã chọn <span className="font-extrabold text-ink/65">{selectedCategory.name}</span></p>}
+          </div>
 
-            <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
-              <button type="button" className="secondary-button" onClick={() => navigate(-1)}>Hủy</button>
-              <button className="primary-button min-w-40" disabled={submitting || !form.amount}>{submitting ? <LoaderCircle className="size-5 animate-spin" /> : <><Check className="size-5" /> {transactionId ? 'Lưu thay đổi' : 'Lưu giao dịch'}</>}</button>
-            </div>
-          </form>
-        </section>
-
-        <aside className="h-fit rounded-[28px] bg-mint/70 p-6 lg:sticky lg:top-8">
-          <Sparkles className="size-6 text-forest" />
-          <h2 className="mt-4 font-editorial text-2xl font-semibold text-ink">Ghi nhanh, nhớ lâu.</h2>
-          <p className="mt-3 text-sm leading-6 text-ink/55">Chỉ cần số tiền, danh mục và ngày. MoneyMate tự gán giao dịch cho bạn, nhưng vẫn có thể chọn người còn lại khi cần.</p>
-          {selectedCategory && <div className="mt-5 flex items-center gap-3 rounded-2xl bg-white/65 p-3"><span className="grid size-10 place-items-center rounded-xl" style={{ color: selectedCategory.color, backgroundColor: `${selectedCategory.color}1F` }}><CategoryIcon name={selectedCategory.icon} className="size-5" /></span><div><div className="text-xs font-bold text-ink/35">Đã chọn</div><div className="text-sm font-extrabold text-ink">{selectedCategory.name}</div></div></div>}
-        </aside>
-      </div>
+          <div className="fixed inset-x-0 bottom-[78px] z-30 border-t border-ink/[0.07] bg-paper/95 px-4 py-3 shadow-[0_-10px_30px_rgba(23,54,47,0.07)] backdrop-blur-xl lg:static lg:border-t lg:bg-transparent lg:px-7 lg:pb-7 lg:pt-0 lg:shadow-none">
+            <button className="flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-coral px-6 text-base font-extrabold text-white shadow-lg shadow-coral/25 transition hover:-translate-y-0.5 hover:bg-[#e8654d] disabled:pointer-events-none disabled:opacity-50" disabled={submitting || !form.amount || !form.categoryId}>
+              {submitting ? <LoaderCircle className="size-5 animate-spin" /> : <><Check className="size-5" /> {transactionId ? 'Lưu thay đổi' : form.type === 'expense' ? 'Nhập khoản chi' : 'Nhập khoản thu'}</>}
+            </button>
+          </div>
+        </form>
+      </section>
     </div>
   );
 }
@@ -128,28 +174,37 @@ export default function TransactionForm() {
 function TransactionFormSkeleton() {
   return (
     <div aria-label="Đang tải giao dịch" className="mx-auto max-w-4xl" role="status">
-      <Skeleton className="mb-6 h-11 w-28 rounded-2xl" />
-      <div className="grid gap-7 lg:grid-cols-[1fr_300px]">
-        <section className="rounded-[32px] border border-ink/[0.06] bg-paper/90 p-5 shadow-soft sm:p-8">
-          <Skeleton className="h-3 w-28" />
-          <Skeleton className="mt-4 h-10 w-72 max-w-full rounded-2xl" />
-          <div className="mt-8 space-y-7">
-            <Skeleton className="h-14 w-full rounded-[20px]" />
-            <div className="space-y-2"><Skeleton className="h-3 w-20" /><Skeleton className="h-20 w-full rounded-2xl" /></div>
-            <div className="space-y-3">
-              <Skeleton className="h-3 w-24" />
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{Array.from({ length: 8 }, (_, index) => <Skeleton key={index} className="h-[88px] rounded-[20px]" />)}</div>
-            </div>
-            <div className="grid gap-5 sm:grid-cols-2"><Skeleton className="h-16 rounded-2xl" /><Skeleton className="h-16 rounded-2xl" /></div>
-            <Skeleton className="h-24 w-full rounded-2xl" />
-          </div>
-        </section>
-        <aside className="rounded-[28px] bg-mint/45 p-6"><Skeleton className="size-7 rounded-lg" /><Skeleton className="mt-5 h-7 w-48" /><Skeleton className="mt-4 h-3 w-full" /><Skeleton className="mt-2 h-3 w-5/6" /></aside>
-      </div>
+      <section className="-mx-4 -mt-6 overflow-hidden border-y border-ink/[0.07] bg-paper/90 shadow-soft sm:mx-0 sm:mt-0 sm:rounded-[32px] sm:border">
+        <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-3 border-b border-ink/[0.06] px-4 py-4 sm:px-7">
+          <Skeleton className="size-11 rounded-full" />
+          <Skeleton className="mx-auto h-14 w-full max-w-[340px] rounded-full" />
+          <Skeleton className="size-11 rounded-full" />
+        </div>
+        <div className="divide-y divide-ink/[0.07] px-4 sm:px-7">{Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className={`${index === 2 ? 'h-[86px]' : 'h-[74px]'} w-full rounded-none`} />)}</div>
+        <div className="px-4 pb-28 pt-7 sm:px-7">
+          <Skeleton className="h-6 w-28 rounded-lg" />
+          <Skeleton className="mt-2 h-3 w-56 rounded-lg" />
+          <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">{Array.from({ length: 10 }, (_, index) => <Skeleton key={index} className="h-[92px] rounded-2xl" />)}</div>
+          <Skeleton className="mt-6 h-14 w-full rounded-2xl" />
+        </div>
+      </section>
     </div>
   );
 }
 
-function TypeButton({ active, onClick, icon: Icon, label, activeClass }) {
-  return <button type="button" onClick={onClick} className={`flex min-h-12 items-center justify-center gap-2 rounded-[15px] text-sm font-extrabold transition ${active ? activeClass : 'text-ink/42'}`}><Icon className="size-5" />{label}</button>;
+function TypeButton({ active, onClick, label }) {
+  return <button type="button" onClick={onClick} className={`min-h-11 rounded-full px-3 text-sm font-extrabold transition sm:text-base ${active ? 'bg-white text-coral shadow-sm' : 'text-ink/48 hover:text-ink'}`}>{label}</button>;
+}
+
+function formatTransactionDate(value) {
+  const date = new Date(`${value}T12:00:00`);
+  const weekDays = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+  return `${date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })} (${weekDays[date.getDay()]})`;
+}
+
+function currencySymbol(currency) {
+  if (currency === 'VND') return '₫';
+  if (currency === 'USD') return '$';
+  if (currency === 'EUR') return '€';
+  return currency;
 }

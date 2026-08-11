@@ -35,6 +35,7 @@ export default {
       },
       animation: {
         'fade-in': 'fadeIn 420ms cubic-bezier(.22,.8,.24,1) both',
+        'fade-only': 'fadeOnly 360ms ease-out both',
         'rise-in': 'riseIn 500ms cubic-bezier(.2,.8,.2,1) both',
         'soft-pulse': 'softPulse 2.4s ease-in-out infinite',
       },
@@ -42,6 +43,10 @@ export default {
         fadeIn: {
           from: { opacity: '0', transform: 'translateY(5px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        fadeOnly: {
+          from: { opacity: '0' },
+          to: { opacity: '1' },
         },
         riseIn: {
           from: { opacity: '0', transform: 'translateY(14px)' },
