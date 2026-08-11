@@ -103,8 +103,8 @@ export default function Plans() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 sm:space-y-5">
-      <header className="flex min-h-12 items-center justify-center">
-        <h1 className="font-editorial text-[30px] font-semibold tracking-[-0.025em] text-ink sm:text-4xl">Kế hoạch chi tiêu</h1>
+      <header className="flex min-h-10 items-center justify-center">
+        <h1 className="font-editorial text-[24px] font-semibold tracking-[-0.025em] text-ink sm:text-3xl">Kế hoạch chi tiêu</h1>
       </header>
 
       <div>
@@ -120,7 +120,7 @@ export default function Plans() {
               <h2 className="font-editorial text-[26px] font-semibold tracking-[-0.02em] text-ink">Kế hoạch chi tiết</h2>
               <p className="mt-1 text-xs font-semibold text-ink/40">Nhập số tiền cho từng danh mục, hệ thống sẽ tự lưu khi bạn rời ô nhập.</p>
             </div>
-            <div className="overflow-hidden rounded-[28px] border border-ink/[0.06] bg-white/70 px-4 shadow-sm backdrop-blur sm:px-6">
+            <div className="overflow-hidden rounded-[18px] border border-ink/[0.06] bg-white/70 px-3 shadow-sm backdrop-blur sm:px-5">
               {data.items.map((item, index) => (
                 <BudgetInputRow
                   key={item.category.id}
@@ -149,12 +149,12 @@ function BudgetSummary({ data, currency }) {
   const progress = Math.min(data.percentage, 100);
 
   return (
-    <section className="rounded-[28px] border border-ink/[0.06] bg-white/75 p-5 shadow-sm backdrop-blur sm:p-6">
+    <section className="rounded-[18px] border border-ink/[0.06] bg-white/75 p-4 shadow-sm backdrop-blur sm:p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="grid size-11 shrink-0 place-items-center rounded-[15px] bg-coral/10 text-coral"><WalletCards className="size-5" /></span>
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-coral/10 text-coral"><WalletCards className="size-[18px]" /></span>
           <div className="min-w-0 flex-1">
-            <h2 className="whitespace-nowrap font-editorial text-[23px] font-semibold leading-none text-ink sm:text-[25px]">Tổng ngân sách</h2>
+            <h2 className="font-editorial text-[20px] font-semibold leading-tight text-ink sm:text-[22px]">Tổng ngân sách</h2>
             <p className="mt-2 text-xs font-bold text-ink/35">{plannedCount}/{data.items.length} danh mục đã nhập</p>
           </div>
         </div>
@@ -163,7 +163,7 @@ function BudgetSummary({ data, currency }) {
           <div className={`mt-0.5 text-lg font-black tracking-[-0.02em] ${over ? 'text-coral' : 'text-ink'}`}>{formatMoney(Math.abs(data.remaining), currency)}</div>
         </div>
       </div>
-      <ProgressBar percentage={progress} color={over ? '#F2735B' : '#E98855'} className="mt-5" />
+      <ProgressBar percentage={progress} color={over ? '#E26F54' : '#2D8A72'} className="mt-4" />
       <div className="mt-3 grid grid-cols-[1fr_auto] items-end gap-4">
         <div className="text-xs font-semibold text-ink/38">Ngân sách <strong className="ml-1 text-ink/65">{formatMoney(data.planned, currency)}</strong></div>
         <div className="text-right">
@@ -182,16 +182,16 @@ function BudgetInputRow({ item, currency, value, index, saving, deleting, onChan
   const currencyLabel = currency === 'VND' ? '₫' : currency;
 
   return (
-    <article className="animate-rise-in border-b border-ink/[0.08] py-5 last:border-b-0 sm:py-6" style={{ animationDelay: `${Math.min(index * 35, 245)}ms` }}>
+    <article className="animate-rise-in border-b border-ink/[0.08] py-4 last:border-b-0 sm:py-5" style={{ animationDelay: `${Math.min(index * 30, 220)}ms` }}>
       <div className="flex items-center gap-2.5 sm:gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-[14px] sm:size-11 sm:rounded-[15px]" style={{ color: item.category.color, backgroundColor: `${item.category.color}16` }}>
-          <CategoryIcon name={item.category.icon} className="size-5" strokeWidth={2.25} />
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl sm:size-10" style={{ color: item.category.color, backgroundColor: `${item.category.color}16` }}>
+          <CategoryIcon name={item.category.icon} className="size-[18px]" strokeWidth={2.25} />
         </span>
-        <h3 className="min-w-0 flex-1 truncate text-base font-black tracking-[-0.01em] text-ink sm:text-lg">{item.category.name}</h3>
+        <h3 className="min-w-0 flex-1 truncate text-sm font-bold tracking-[-0.01em] text-ink sm:text-base">{item.category.name}</h3>
         <label className="relative block w-[126px] shrink-0 sm:w-40">
           <span className="sr-only">Ngân sách {item.category.name}</span>
           <input
-            className="h-11 w-full rounded-[14px] border border-ink/10 bg-white/80 pl-3 pr-9 text-right text-[15px] font-black text-ink shadow-sm transition placeholder:text-xs placeholder:font-bold placeholder:text-ink/28 focus:border-forest/40 focus:bg-white"
+            className="h-10 w-full rounded-xl border border-ink/10 bg-white/80 pl-3 pr-9 text-right text-sm font-bold text-ink shadow-none transition placeholder:text-[11px] placeholder:font-semibold placeholder:text-ink/28 focus:border-ink/10 focus:bg-white"
             type="text"
             inputMode="numeric"
             value={formatInputAmount(value)}
@@ -205,8 +205,8 @@ function BudgetInputRow({ item, currency, value, index, saving, deleting, onChan
         </label>
       </div>
 
-      <div className="mt-4 grid grid-cols-[1fr_auto] items-center gap-4">
-        <ProgressBar percentage={progress} color={over ? '#F2735B' : item.category.color} />
+      <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-4">
+        <ProgressBar percentage={progress} color={over ? '#E26F54' : item.category.color} />
         <span className={`w-11 text-right text-sm font-extrabold ${over ? 'text-coral' : planned ? 'text-ink/38' : 'text-ink/20'}`}>{planned ? `${item.percentage}%` : '—'}</span>
       </div>
       <div className="mt-2 flex items-center justify-between gap-4 text-xs font-semibold">
@@ -228,7 +228,7 @@ function BudgetInputRow({ item, currency, value, index, saving, deleting, onChan
 
 function ProgressBar({ percentage, color, className = '' }) {
   return (
-    <div className={`h-2.5 overflow-hidden rounded-full bg-ink/[0.06] ${className}`}>
+    <div className={`h-1.5 overflow-hidden rounded-full bg-ink/[0.06] ${className}`}>
       <div className="h-full rounded-full transition-[width] duration-700 ease-out" style={{ width: `${percentage}%`, backgroundColor: color }} />
     </div>
   );

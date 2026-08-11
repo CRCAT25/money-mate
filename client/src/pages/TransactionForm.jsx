@@ -72,12 +72,12 @@ export default function TransactionForm() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <section className="-mx-4 -mt-6 overflow-hidden border-y border-ink/[0.07] bg-paper/95 shadow-soft sm:mx-0 sm:mt-0 sm:rounded-[32px] sm:border">
-        <header className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-3 border-b border-ink/[0.06] px-4 py-4 sm:px-7 sm:py-5">
+      <section className="-mx-4 -mt-4 overflow-hidden border-y border-ink/[0.07] bg-paper/95 shadow-soft sm:mx-0 sm:mt-0 sm:rounded-[20px] sm:border">
+        <header className="grid grid-cols-[42px_minmax(0,1fr)_42px] items-center gap-2 border-b border-ink/[0.06] px-4 py-3 sm:px-7 sm:py-4">
           <button type="button" onClick={() => navigate(-1)} className="grid size-11 place-items-center rounded-full bg-white/75 text-ink/55 shadow-sm transition hover:bg-white hover:text-ink" aria-label="Quay lại">
             <ArrowLeft className="size-5" />
           </button>
-          <div className="mx-auto grid w-full max-w-[340px] grid-cols-2 rounded-full bg-ink/[0.055] p-1.5">
+          <div className="mx-auto grid w-full max-w-[320px] grid-cols-2 rounded-full bg-ink/[0.055] p-1">
             <TypeButton active={form.type === 'expense'} onClick={() => changeType('expense')} label="Tiền chi" />
             <TypeButton active={form.type === 'income'} onClick={() => changeType('income')} label="Tiền thu" />
           </div>
@@ -86,9 +86,9 @@ export default function TransactionForm() {
           </span>
         </header>
 
-        <form onSubmit={submit} className="pb-28 lg:pb-0">
+        <form onSubmit={submit} className="pb-[calc(140px+env(safe-area-inset-bottom))] lg:pb-0">
           <div className="divide-y divide-ink/[0.07] px-4 sm:px-7">
-            <div className="grid min-h-[74px] grid-cols-[82px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[130px_minmax(0,1fr)]">
+            <div className="grid min-h-[64px] grid-cols-[78px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[130px_minmax(0,1fr)]">
               <span className="text-sm font-extrabold text-ink/72 sm:text-base">Ngày</span>
               <div className="grid grid-cols-[42px_minmax(0,1fr)_42px] items-center gap-1">
                 <button type="button" onClick={() => changeDate(-1)} className="grid size-10 place-items-center rounded-xl text-ink/45 transition hover:bg-ink/[0.05] hover:text-ink" aria-label="Ngày trước">
@@ -104,15 +104,15 @@ export default function TransactionForm() {
               </div>
             </div>
 
-            <label className="grid min-h-[74px] grid-cols-[82px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[130px_minmax(0,1fr)]">
+            <label className="grid min-h-[64px] grid-cols-[78px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[130px_minmax(0,1fr)]">
               <span className="text-sm font-extrabold text-ink/72 sm:text-base">Ghi chú</span>
               <input className="min-h-11 min-w-0 bg-transparent px-3 text-[15px] font-semibold text-ink outline-none placeholder:text-ink/25" maxLength="240" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="Chưa nhập vào" />
             </label>
 
-            <label className="grid min-h-[86px] grid-cols-[82px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[130px_minmax(0,1fr)]">
+            <label className="grid min-h-[74px] grid-cols-[78px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[130px_minmax(0,1fr)]">
               <span className="text-sm font-extrabold text-ink/72 sm:text-base">{form.type === 'expense' ? 'Tiền chi' : 'Tiền thu'}</span>
               <span className="flex min-w-0 items-center gap-3">
-                <input className="min-h-14 min-w-0 flex-1 rounded-xl bg-sun/15 px-4 text-3xl font-extrabold tracking-[-0.04em] text-ink outline-none placeholder:text-ink/35" type="number" inputMode="numeric" min="1" max="999999999999" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} placeholder="0" autoFocus required />
+                <input className="min-h-12 min-w-0 flex-1 rounded-xl bg-sun/15 px-4 text-[26px] font-bold tracking-[-0.04em] text-ink outline-none placeholder:text-ink/35" type="number" inputMode="numeric" min="1" max="999999999999" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} placeholder="0" autoFocus required />
                 <span className="shrink-0 text-lg font-extrabold text-ink/55">{currencySymbol(family.currency)}</span>
               </span>
             </label>
@@ -135,11 +135,11 @@ export default function TransactionForm() {
                     key={category.id}
                     type="button"
                     onClick={() => setForm({ ...form, categoryId: category.id })}
-                    className={`relative flex min-h-[92px] min-w-0 flex-col items-center justify-center gap-2 rounded-2xl border px-2 py-3 text-xs font-extrabold transition active:scale-[0.98] ${active ? 'border-ink/30 bg-white text-ink shadow-md ring-2 ring-ink/8' : 'border-ink/[0.09] bg-white/55 text-ink/58 hover:border-ink/15 hover:bg-white'}`}
+                    className={`relative flex min-h-[82px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border px-1.5 py-2 text-[11px] font-bold transition active:scale-[0.98] ${active ? 'border-coral/50 bg-coral/[0.07] text-ink shadow-sm' : 'border-ink/[0.09] bg-white/55 text-ink/58 hover:border-ink/15 hover:bg-white'}`}
                   >
                     {active && <span className="absolute right-2 top-2 grid size-4 place-items-center rounded-full bg-ink text-white"><Check className="size-3" strokeWidth={3} /></span>}
-                    <span className="grid size-10 place-items-center rounded-[14px]" style={{ backgroundColor: `${category.color}18`, color: category.color }}>
-                      <CategoryIcon name={category.icon} className="size-5" strokeWidth={2.2} />
+                    <span className="grid size-8 place-items-center rounded-[10px]" style={{ backgroundColor: `${category.color}18`, color: category.color }}>
+                      <CategoryIcon name={category.icon} className="size-[18px]" strokeWidth={2.2} />
                     </span>
                     <span className="w-full truncate text-center">{category.name}</span>
                   </button>
@@ -160,8 +160,8 @@ export default function TransactionForm() {
             {selectedCategory && <p className="mt-3 text-center text-xs font-semibold text-ink/38">Đã chọn <span className="font-extrabold text-ink/65">{selectedCategory.name}</span></p>}
           </div>
 
-          <div className="fixed inset-x-0 bottom-[78px] z-30 border-t border-ink/[0.07] bg-paper/95 px-4 py-3 shadow-[0_-10px_30px_rgba(23,54,47,0.07)] backdrop-blur-xl lg:static lg:border-t lg:bg-transparent lg:px-7 lg:pb-7 lg:pt-0 lg:shadow-none">
-            <button className="flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-coral px-6 text-base font-extrabold text-white shadow-lg shadow-coral/25 transition hover:-translate-y-0.5 hover:bg-[#e8654d] disabled:pointer-events-none disabled:opacity-50" disabled={submitting || !form.amount || !form.categoryId}>
+          <div className="fixed inset-x-0 bottom-[68px] z-30 border-t border-ink/[0.07] bg-paper/95 px-4 py-2.5 shadow-[0_-8px_22px_rgba(32,49,44,0.07)] backdrop-blur-xl lg:static lg:border-t lg:bg-transparent lg:px-7 lg:pb-6 lg:pt-0 lg:shadow-none">
+            <button className="flex min-h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-coral px-5 text-sm font-bold text-white shadow-md shadow-coral/20 transition active:scale-[0.99] hover:bg-[#d9634b] disabled:pointer-events-none disabled:opacity-50" disabled={submitting || !form.amount || !form.categoryId}>
               {submitting ? <LoaderCircle className="size-5 animate-spin" /> : <><Check className="size-5" /> {transactionId ? 'Lưu thay đổi' : form.type === 'expense' ? 'Nhập khoản chi' : 'Nhập khoản thu'}</>}
             </button>
           </div>
@@ -174,17 +174,17 @@ export default function TransactionForm() {
 function TransactionFormSkeleton() {
   return (
     <div aria-label="Đang tải giao dịch" className="mx-auto max-w-4xl" role="status">
-      <section className="-mx-4 -mt-6 overflow-hidden border-y border-ink/[0.07] bg-paper/90 shadow-soft sm:mx-0 sm:mt-0 sm:rounded-[32px] sm:border">
+      <section className="-mx-4 -mt-4 overflow-hidden border-y border-ink/[0.07] bg-paper/90 shadow-soft sm:mx-0 sm:mt-0 sm:rounded-[20px] sm:border">
         <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-3 border-b border-ink/[0.06] px-4 py-4 sm:px-7">
           <Skeleton className="size-11 rounded-full" />
           <Skeleton className="mx-auto h-14 w-full max-w-[340px] rounded-full" />
           <Skeleton className="size-11 rounded-full" />
         </div>
-        <div className="divide-y divide-ink/[0.07] px-4 sm:px-7">{Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className={`${index === 2 ? 'h-[86px]' : 'h-[74px]'} w-full rounded-none`} />)}</div>
+        <div className="divide-y divide-ink/[0.07] px-4 sm:px-7">{Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className={`${index === 2 ? 'h-[74px]' : 'h-[64px]'} w-full rounded-none`} />)}</div>
         <div className="px-4 pb-28 pt-7 sm:px-7">
           <Skeleton className="h-6 w-28 rounded-lg" />
           <Skeleton className="mt-2 h-3 w-56 rounded-lg" />
-          <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">{Array.from({ length: 10 }, (_, index) => <Skeleton key={index} className="h-[92px] rounded-2xl" />)}</div>
+          <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">{Array.from({ length: 10 }, (_, index) => <Skeleton key={index} className="h-[82px] rounded-xl" />)}</div>
           <Skeleton className="mt-6 h-14 w-full rounded-2xl" />
         </div>
       </section>

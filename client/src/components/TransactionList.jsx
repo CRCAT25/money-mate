@@ -58,12 +58,12 @@ export default function TransactionList({ transactions, currency, onDelete, comp
 
 function TransactionRow({ transaction, currency, compact, showTime, onDelete, open, menuRef, onToggleMenu, onCloseMenu }) {
   return (
-    <article className={`group relative flex items-start gap-3 ${compact ? 'py-3.5' : 'py-4'}`}>
-      <span className="grid size-12 shrink-0 place-items-center rounded-[17px]" style={{ backgroundColor: `${transaction.category.color}1F`, color: transaction.category.color }}>
-        <CategoryIcon name={transaction.category.icon} className="size-[22px]" />
+    <article className={`group relative flex items-start gap-2.5 ${compact ? 'py-3' : 'py-3.5'}`}>
+      <span className="grid size-10 shrink-0 place-items-center rounded-xl" style={{ backgroundColor: `${transaction.category.color}1F`, color: transaction.category.color }}>
+        <CategoryIcon name={transaction.category.icon} className="size-[18px]" />
       </span>
       <div className="min-w-0 flex-1">
-        <h3 className="truncate text-sm font-extrabold text-ink">{transaction.category.name}</h3>
+        <h3 className="truncate text-sm font-bold text-ink">{transaction.category.name}</h3>
         {transaction.note && <p className="mt-0.5 truncate text-xs font-semibold text-ink/38">{transaction.note}</p>}
         {showTime ? (
           <div className="mt-1.5 space-y-0.5 text-[11px] font-semibold leading-4 text-ink/40">
@@ -77,12 +77,12 @@ function TransactionRow({ transaction, currency, compact, showTime, onDelete, op
         )}
       </div>
       <div className="pt-0.5 text-right">
-        <div className={`whitespace-nowrap text-sm font-extrabold ${transaction.type === 'income' ? 'text-[#258C68]' : 'text-ink'}`}>
+        <div className={`whitespace-nowrap text-sm font-bold ${transaction.type === 'income' ? 'text-[#2D8A72]' : 'text-ink'}`}>
           {transaction.type === 'income' ? '+' : '−'}{formatMoney(transaction.amount, currency)}
         </div>
       </div>
       <div className="relative" ref={menuRef}>
-        <button type="button" onClick={onToggleMenu} className="grid size-10 place-items-center rounded-xl text-ink/35 hover:bg-ink/5 hover:text-ink" aria-label="Tùy chọn giao dịch" aria-expanded={open}>
+        <button type="button" onClick={onToggleMenu} className="grid size-9 place-items-center rounded-lg text-ink/35 hover:bg-ink/5 hover:text-ink" aria-label="Tùy chọn giao dịch" aria-expanded={open}>
           <MoreHorizontal className="size-5" />
         </button>
         {open && (

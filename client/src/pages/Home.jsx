@@ -67,12 +67,12 @@ export default function Home() {
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <div className="fixed inset-x-0 top-[env(safe-area-inset-top)] z-30 flex h-12 items-center justify-center bg-cream/90 px-4 backdrop-blur-xl sm:px-7 lg:static lg:h-auto lg:bg-transparent lg:px-0 lg:backdrop-blur-none">
         <MonthPicker value={month} onChange={setMonth} dense fullWidth />
       </div>
 
-      <section className="overflow-hidden rounded-[28px] border border-ink/[0.07] bg-paper/90 shadow-card">
+      <section className="overflow-hidden rounded-[18px] border border-ink/[0.07] bg-paper/90 shadow-card">
         <div className="grid grid-cols-7 border-b border-ink/[0.07] bg-ink/[0.035]">
           {weekDays.map((day, index) => (
             <div key={day} className={`py-2 text-center text-[10px] font-extrabold ${index === 5 ? 'text-[#1698bf]' : index === 6 ? 'text-coral' : 'text-ink/45'}`}>{day}</div>
@@ -86,11 +86,11 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-ink/[0.06] bg-paper/90 p-4 shadow-card sm:p-6">
+      <section className="rounded-[18px] border border-ink/[0.06] bg-paper/90 p-3.5 shadow-card sm:p-5">
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CalendarDays className="size-5 text-forest" />
-            <h2 className="whitespace-nowrap text-lg font-extrabold tracking-[-0.02em] text-ink sm:text-2xl">Giao dịch gần đây</h2>
+            <h2 className="whitespace-nowrap text-base font-bold tracking-[-0.02em] text-ink sm:text-xl">Giao dịch gần đây</h2>
           </div>
           <Link to="/reports" className="flex min-h-10 shrink-0 items-center gap-1 whitespace-nowrap text-xs font-extrabold text-forest sm:text-sm">Xem tất cả <ArrowRight className="size-4" /></Link>
         </div>

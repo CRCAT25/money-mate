@@ -4,21 +4,21 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: '#17362f',
-        forest: '#245b4e',
-        mint: '#dff3e9',
-        cream: '#f7f3e9',
-        coral: '#f2735b',
-        sun: '#f3c96b',
-        paper: '#fffdf8',
+        ink: '#20312c',
+        forest: '#2d6a5b',
+        mint: '#e8f2ed',
+        cream: '#f4f7f5',
+        coral: '#e26f54',
+        sun: '#e8c77a',
+        paper: '#fffefb',
       },
       fontFamily: {
         sans: ['Be Vietnam Pro', 'sans-serif'],
         editorial: ['Be Vietnam Pro', 'sans-serif'],
       },
       boxShadow: {
-        soft: '0 16px 50px rgba(23, 54, 47, 0.10)',
-        card: '0 8px 30px rgba(23, 54, 47, 0.08)',
+        soft: '0 8px 24px rgba(32, 49, 44, 0.08)',
+        card: '0 4px 16px rgba(32, 49, 44, 0.06)',
       },
       opacity: {
         15: '0.15',

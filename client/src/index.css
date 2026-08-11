@@ -9,8 +9,8 @@
 @tailwind utilities;
 
 :root {
-  color: #17362f;
-  background: #f7f3e9;
+  color: #20312c;
+  background: #f4f7f5;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -26,8 +26,7 @@ html {
   overflow-x: hidden;
   overscroll-behavior-x: none;
   scrollbar-width: none;
-  touch-action: pan-x pan-y;
-  background: #17362f;
+  background: #20312c;
 }
 
 body {
@@ -39,10 +38,7 @@ body {
   overflow-x: hidden;
   scrollbar-width: none;
   padding-top: env(safe-area-inset-top);
-  background:
-    radial-gradient(circle at 10% 0%, rgba(243, 201, 107, 0.18), transparent 28rem),
-    radial-gradient(circle at 100% 24%, rgba(74, 143, 139, 0.13), transparent 25rem),
-    #f7f3e9;
+  background: #f4f7f5;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
@@ -88,13 +84,18 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
+button:focus,
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+}
+
 button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  outline: 3px solid rgba(242, 115, 91, 0.35);
-  outline-offset: 2px;
+a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(45, 106, 91, 0.18);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -116,23 +117,32 @@ textarea:focus-visible {
 
 @layer components {
   .field {
-    @apply min-h-12 w-full rounded-2xl border border-ink/10 bg-white/80 px-4 text-[15px] text-ink shadow-sm transition placeholder:text-ink/35 focus:border-forest/40 focus:bg-white;
+    @apply min-h-11 w-full rounded-xl border border-ink/10 bg-white/75 px-3.5 text-sm text-ink shadow-none transition placeholder:text-ink/35 focus:border-ink/10 focus:bg-white focus:shadow-none;
+  }
+
+  select.field {
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, rgba(32, 49, 44, 0.5) 50%), linear-gradient(135deg, rgba(32, 49, 44, 0.5) 50%, transparent 50%);
+    background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
+    background-repeat: no-repeat;
+    background-size: 5px 5px, 5px 5px;
+    padding-right: 2.5rem;
   }
 
   .label {
-    @apply mb-2 block text-sm font-bold text-ink/75;
+    @apply mb-1.5 block text-xs font-bold text-ink/70;
   }
 
   .primary-button {
-    @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-ink px-5 font-bold text-white shadow-lg shadow-ink/15 transition hover:-translate-y-0.5 hover:bg-forest disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-ink px-4 text-sm font-bold text-white shadow-sm transition active:scale-[0.98] hover:bg-forest disabled:pointer-events-none disabled:opacity-50;
   }
 
   .secondary-button {
-    @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-ink/10 bg-white/70 px-5 font-bold text-ink transition hover:bg-white;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-ink/10 bg-white/70 px-4 text-sm font-bold text-ink transition active:scale-[0.98] hover:bg-white;
   }
 
   .section-title {
-    @apply font-editorial text-[28px] font-semibold leading-none tracking-[-0.02em] text-ink;
+    @apply font-editorial text-[21px] font-semibold leading-tight tracking-[-0.02em] text-ink;
   }
 
   .skeleton {

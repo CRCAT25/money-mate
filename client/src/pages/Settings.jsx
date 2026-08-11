@@ -72,13 +72,13 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-7">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="mb-2 text-xs font-extrabold uppercase tracking-[0.17em] text-coral">Không gian của nhà mình</p><h1 className="font-editorial text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">Cài đặt.</h1></div><Link to="/categories" className="secondary-button"><Grid2X2 className="size-4" /> Quản lý danh mục</Link></div>
+    <div className="space-y-5 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="mb-1.5 text-[10px] font-extrabold uppercase tracking-[0.16em] text-coral">Không gian của nhà mình</p><h1 className="font-editorial text-[28px] font-semibold tracking-[-0.03em] text-ink sm:text-4xl">Cài đặt.</h1></div><Link to="/categories" className="secondary-button"><Grid2X2 className="size-4" /> Quản lý danh mục</Link></div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         <SettingsCard eyebrow="Cá nhân" title="Hồ sơ của bạn" icon={Shield}>
           <form onSubmit={saveProfile} className="space-y-5">
-            <div className="flex items-center gap-4 rounded-[22px] bg-mint/55 p-4"><Avatar user={{ ...user, ...profile }} size="lg" /><div className="min-w-0 flex-1"><div className="truncate font-extrabold text-ink">{profile.displayName || user.displayName}</div><div className="mt-1 truncate text-sm text-ink/45">{profile.email}</div><div className="mt-3 flex flex-wrap gap-2"><button type="button" className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-white px-3 text-xs font-extrabold text-forest shadow-sm" onClick={() => avatarInput.current?.click()}><ImagePlus className="size-4" /> Chọn ảnh</button>{profile.avatarUrl && <button type="button" className="inline-flex min-h-9 items-center gap-1 rounded-xl px-2 text-xs font-bold text-coral" onClick={() => setProfile({ ...profile, avatarUrl: '' })}><X className="size-4" /> Gỡ ảnh</button>}</div><input ref={avatarInput} className="hidden" type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseAvatar} /></div></div>
+            <div className="flex items-center gap-3 rounded-[16px] bg-mint/45 p-3"><Avatar user={{ ...user, ...profile }} size="lg" /><div className="min-w-0 flex-1"><div className="truncate text-sm font-bold text-ink">{profile.displayName || user.displayName}</div><div className="mt-0.5 truncate text-xs text-ink/55">{profile.email}</div><div className="mt-2 flex flex-wrap gap-2"><button type="button" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-white px-3 text-xs font-bold text-forest shadow-sm" onClick={() => avatarInput.current?.click()}><ImagePlus className="size-4" /> Chọn ảnh</button>{profile.avatarUrl && <button type="button" className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-bold text-coral" onClick={() => setProfile({ ...profile, avatarUrl: '' })}><X className="size-4" /> Gỡ ảnh</button>}</div><input ref={avatarInput} className="hidden" type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseAvatar} /></div></div>
             <label className="block"><span className="label">Tên hiển thị</span><input className="field" value={profile.displayName} onChange={(e) => setProfile({ ...profile, displayName: e.target.value })} required /></label>
             <label className="block"><span className="label">Email</span><input className="field" type="email" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} required /></label>
             {verificationUrl && <a className="flex min-h-12 items-center justify-center rounded-2xl bg-sun/25 px-4 text-sm font-extrabold text-ink" href={verificationUrl}>Xác nhận email mới</a>}
@@ -95,7 +95,7 @@ export default function Settings() {
         </SettingsCard>
 
         <SettingsCard eyebrow="Chia sẻ" title="Thành viên gia đình" icon={Users}>
-          <div className="space-y-3">{familyDetails?.members.map((member) => <div key={member.id} className="flex items-center gap-3 rounded-[20px] border border-ink/[0.06] bg-white/60 p-3"><Avatar user={member} /><div className="min-w-0 flex-1"><div className="truncate text-sm font-extrabold text-ink">{member.displayName} {member.id === user.id && <span className="font-semibold text-ink/35">(bạn)</span>}</div><div className="truncate text-xs text-ink/40">{member.email} · {member.role === 'owner' ? 'Chủ gia đình' : 'Thành viên'}</div></div>{user.role === 'owner' && member.role === 'member' && <button onClick={() => removeMember(member)} className="grid size-10 place-items-center rounded-xl text-ink/35 hover:bg-coral/10 hover:text-coral" aria-label="Xóa thành viên"><UserMinus className="size-4" /></button>}</div>)}</div>
+          <div className="space-y-3">{familyDetails?.members.map((member) => <div key={member.id} className="flex items-center gap-3 rounded-[14px] border border-ink/[0.06] bg-white/60 p-3"><Avatar user={member} /><div className="min-w-0 flex-1"><div className="truncate text-sm font-bold text-ink">{member.displayName} {member.id === user.id && <span className="font-semibold text-ink/45">(bạn)</span>}</div><div className="truncate text-xs text-ink/50">{member.email} · {member.role === 'owner' ? 'Chủ gia đình' : 'Thành viên'}</div></div>{user.role === 'owner' && member.role === 'member' && <button type="button" onClick={() => removeMember(member)} className="grid size-10 place-items-center rounded-xl text-ink/40 hover:bg-coral/10 hover:text-coral" aria-label="Xóa thành viên"><UserMinus className="size-4" /></button>}</div>)}</div>
           {familyDetails?.members.length < 2 && <div className="mt-5 rounded-[22px] bg-sun/20 p-4"><div className="text-xs font-extrabold uppercase tracking-[0.12em] text-ink/40">Mã mời người ấy</div><div className="mt-2 flex items-center gap-2"><code className="flex-1 text-xl font-black tracking-[0.16em] text-ink">{familyDetails.inviteCode}</code><button className="grid size-11 place-items-center rounded-xl bg-white text-forest shadow-sm" onClick={() => { navigator.clipboard.writeText(familyDetails.inviteCode); notify('Đã sao chép mã mời.'); }}><Copy className="size-4" /></button>{user.role === 'owner' && <button className="grid size-11 place-items-center rounded-xl bg-white text-forest shadow-sm" onClick={regenerateCode}><RefreshCw className="size-4" /></button>}</div></div>}
         </SettingsCard>
 
@@ -104,8 +104,8 @@ export default function Settings() {
         </SettingsCard>
       </div>
 
-      <section className="rounded-[28px] border border-coral/15 bg-coral/[0.05] p-5 sm:p-7">
-        <h2 className="font-editorial text-2xl font-semibold text-ink">Phiên đăng nhập & dữ liệu</h2>
+      <section className="rounded-[18px] border border-coral/15 bg-coral/[0.04] p-4 sm:p-5">
+        <h2 className="font-editorial text-xl font-semibold text-ink">Phiên đăng nhập & dữ liệu</h2>
         <p className="mt-2 text-sm leading-6 text-ink/50">Bạn có thể đăng xuất trên thiết bị này hoặc xóa vĩnh viễn tài khoản của mình.</p>
         <div className="mt-5 flex flex-col gap-3 sm:flex-row"><button className="secondary-button" onClick={async () => { await logout(); navigate('/login'); }}><LogOut className="size-4" /> Đăng xuất</button><button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl px-5 font-bold text-coral transition hover:bg-coral/10" onClick={deleteAccount}><Trash2 className="size-4" /> Xóa tài khoản</button></div>
       </section>
@@ -140,7 +140,7 @@ function SettingsPageSkeleton() {
 }
 
 function SettingsCard({ eyebrow, title, icon: Icon, children }) {
-  return <section className="rounded-[30px] border border-ink/[0.06] bg-paper/85 p-5 shadow-card sm:p-7"><div className="mb-6 flex items-start justify-between"><div><p className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-ink/35">{eyebrow}</p><h2 className="font-editorial text-3xl font-semibold text-ink">{title}</h2></div><span className="grid size-11 place-items-center rounded-2xl bg-mint text-forest"><Icon className="size-5" /></span></div>{children}</section>;
+  return <section className="rounded-[18px] border border-ink/[0.06] bg-paper/85 p-4 shadow-card sm:p-5"><div className="mb-5 flex items-start justify-between"><div><p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.13em] text-ink/48">{eyebrow}</p><h2 className="font-editorial text-[21px] font-semibold text-ink">{title}</h2></div><span className="grid size-10 place-items-center rounded-xl bg-mint text-forest"><Icon className="size-[18px]" /></span></div>{children}</section>;
 }
 
 function resizeAvatar(file) {

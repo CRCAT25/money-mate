@@ -39,22 +39,22 @@ export default function Categories() {
   };
 
   return (
-    <div className="space-y-7">
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-        <div><p className="mb-2 text-xs font-extrabold uppercase tracking-[0.17em] text-coral">Gọn gàng theo cách của bạn</p><h1 className="font-editorial text-4xl font-semibold tracking-[-0.03em] text-ink sm:text-5xl">Danh mục chung.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-ink/52">Cả hai cùng dùng một bộ danh mục để báo cáo luôn rõ ràng và nhất quán.</p></div>
+    <div className="space-y-5 sm:space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div><p className="mb-1.5 text-[10px] font-extrabold uppercase tracking-[0.16em] text-coral">Gọn gàng theo cách của bạn</p><h1 className="font-editorial text-[28px] font-semibold tracking-[-0.03em] text-ink sm:text-4xl">Danh mục chung.</h1><p className="mt-2 max-w-xl text-sm leading-5 text-ink/58">Cả hai cùng dùng một bộ danh mục để báo cáo luôn rõ ràng và nhất quán.</p></div>
         <button className="primary-button" onClick={openCreate}><Plus className="size-5" /> Thêm danh mục</button>
       </div>
 
-      <div className="inline-grid grid-cols-2 rounded-2xl border border-ink/[0.06] bg-white/60 p-1.5 shadow-sm">
-        {[['expense', 'Khoản chi', categories.filter((c) => c.type === 'expense').length], ['income', 'Khoản thu', categories.filter((c) => c.type === 'income').length]].map(([value, label, count]) => <button key={value} onClick={() => setTab(value)} className={`min-h-11 rounded-xl px-5 text-sm font-extrabold transition ${tab === value ? 'bg-ink text-white shadow-md' : 'text-ink/45'}`}>{label} <span className="ml-1 inline-flex min-w-4 justify-center opacity-50">{loading ? <Skeleton className="inline-block h-3 w-4 bg-current/20" /> : count}</span></button>)}
+      <div className="inline-grid grid-cols-2 rounded-xl border border-ink/[0.06] bg-white/60 p-1 shadow-sm">
+        {[['expense', 'Khoản chi', categories.filter((c) => c.type === 'expense').length], ['income', 'Khoản thu', categories.filter((c) => c.type === 'income').length]].map(([value, label, count]) => <button type="button" key={value} onClick={() => setTab(value)} className={`min-h-10 rounded-lg px-4 text-xs font-bold transition active:scale-[0.98] ${tab === value ? 'bg-ink text-white shadow-sm' : 'text-ink/50'}`}>{label} <span className="ml-1 inline-flex min-w-4 justify-center opacity-50">{loading ? <Skeleton className="inline-block h-3 w-4 bg-current/20" /> : count}</span></button>)}
       </div>
 
       {loading ? <CategoryGridSkeleton /> : (
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {visible.map((category, index) => (
-          <article key={category.id} className="group flex animate-rise-in items-center gap-4 rounded-[24px] border border-ink/[0.06] bg-paper/80 p-4 shadow-sm transition hover:-translate-y-0.5 hover:bg-white hover:shadow-card" style={{ animationDelay: `${Math.min(index * 35, 280)}ms` }}>
-            <span className="grid size-14 shrink-0 place-items-center rounded-[18px]" style={{ backgroundColor: `${category.color}1F`, color: category.color }}><CategoryIcon name={category.icon} className="size-6" /></span>
-            <div className="min-w-0 flex-1"><h2 className="truncate font-extrabold text-ink">{category.name}</h2><p className="mt-1 text-xs font-semibold text-ink/38">{category.transactionCount} giao dịch {category.isDefault && '· Mặc định'}</p></div>
+          <article key={category.id} className="group flex animate-rise-in items-center gap-3 rounded-[16px] border border-ink/[0.06] bg-paper/80 p-3 shadow-sm transition active:scale-[0.99] hover:bg-white hover:shadow-card" style={{ animationDelay: `${Math.min(index * 30, 240)}ms` }}>
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl" style={{ backgroundColor: `${category.color}1F`, color: category.color }}><CategoryIcon name={category.icon} className="size-5" /></span>
+            <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-bold text-ink">{category.name}</h2><p className="mt-0.5 text-[11px] font-semibold text-ink/48">{category.transactionCount} giao dịch {category.isDefault && '· Mặc định'}</p></div>
             <div className="flex gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
               <button onClick={() => openEdit(category)} className="grid size-10 place-items-center rounded-xl text-ink/40 hover:bg-mint hover:text-forest" aria-label="Sửa danh mục"><Edit3 className="size-4" /></button>
               <button onClick={() => remove(category)} className="grid size-10 place-items-center rounded-xl text-ink/40 hover:bg-coral/10 hover:text-coral" aria-label="Xóa danh mục"><Trash2 className="size-4" /></button>
@@ -64,7 +64,7 @@ export default function Categories() {
         </section>
       )}
 
-      <div className="rounded-[26px] border border-sun/30 bg-sun/15 p-5 text-sm leading-6 text-ink/60"><strong className="text-ink">Lưu ý:</strong> Danh mục đã có giao dịch sẽ không thể xóa để bảo toàn lịch sử. Bạn vẫn có thể đổi tên, màu và biểu tượng.</div>
+      <div className="rounded-[16px] border border-sun/25 bg-sun/10 p-4 text-sm leading-5 text-ink/65"><strong className="text-ink">Lưu ý:</strong> Danh mục đã có giao dịch sẽ không thể xóa để bảo toàn lịch sử. Bạn vẫn có thể đổi tên, màu và biểu tượng.</div>
 
       <Modal open={Boolean(modal)} onClose={() => setModal(null)} title={modal === 'create' ? 'Danh mục mới' : 'Chỉnh sửa danh mục'}>
         <form onSubmit={submit} className="space-y-5">
