@@ -167,7 +167,7 @@ function BudgetSummary({ data, currency }) {
 
       <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-normal text-ink/38">
         <span className="truncate">Ngân sách <strong className="font-normal text-ink/62">{formatMoney(data.planned, currency)}</strong></span>
-        <span className="truncate text-right">Chi tiêu <strong className="font-normal text-ink/62">{formatMoney(data.spent, currency)}</strong></span>
+        <span className="truncate text-right">Chi tiêu: <strong className="font-normal text-ink/62">{formatMoney(data.spent, currency)}</strong></span>
       </div>
     </section>
   );
@@ -225,8 +225,8 @@ function BudgetViewRow({ item, currency, index }) {
         <span className={`w-9 shrink-0 text-right text-[10px] font-normal tabular-nums ${over ? 'text-[#E45757]' : 'text-ink/35'}`}>{percentage}%</span>
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] font-normal text-ink/34">
-        <span className="truncate">Ngân sách <strong className="font-normal text-ink/58">{formatMoney(item.amount, currency)}</strong></span>
-        <span className="truncate text-right">Thực tế <strong className="font-normal text-ink/58">{formatMoney(item.spent, currency)}</strong></span>
+        <span className="truncate">Ngân sách: <strong className="font-normal text-ink/58">{formatMoney(item.amount, currency)}</strong></span>
+        <span className="truncate text-right">Thực tế: <strong className="font-normal text-ink/58">{formatMoney(item.spent, currency)}</strong></span>
       </div>
     </article>
   );

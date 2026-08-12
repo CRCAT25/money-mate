@@ -68,7 +68,7 @@ export default function AppShell({ children }) {
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(6px+env(safe-area-inset-bottom))] lg:hidden">
-        <div className="grid h-[62px] grid-cols-5 items-center rounded-[22px] border border-white/80 bg-paper/90 px-1.5 shadow-[0_10px_32px_rgba(32,49,44,0.14),0_1px_0_rgba(255,255,255,0.9)_inset] backdrop-blur-2xl">
+        <div className="grid h-[62px] grid-cols-5 items-center rounded-[22px] border border-white/70 bg-[linear-gradient(115deg,rgba(232,242,237,0.94),rgba(255,254,251,0.92)_52%,rgba(252,239,233,0.92))] px-1.5 shadow-[0_10px_32px_rgba(32,49,44,0.14),0_1px_0_rgba(255,255,255,0.9)_inset] backdrop-blur-2xl">
           {mobileNav.map(({ to, mobile, icon: Icon, primary }) => (
             <NavLink
               key={to}

@@ -69,7 +69,7 @@ export default function Home() {
   return (
     <div className="space-y-4 sm:space-y-5">
       <div className="fixed inset-x-0 top-[env(safe-area-inset-top)] z-30 flex h-12 items-center justify-center bg-cream/90 px-4 backdrop-blur-xl sm:px-7 lg:static lg:h-auto lg:bg-transparent lg:px-0 lg:backdrop-blur-none">
-        <MonthPicker value={month} onChange={setMonth} dense fullWidth />
+        <MonthPicker value={month} onChange={setMonth} dense fullWidth variant="budget" />
       </div>
 
       <section className="overflow-hidden rounded-[18px] border border-ink/[0.07] bg-paper/90 shadow-card">

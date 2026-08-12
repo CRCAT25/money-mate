@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useAuth } from './context/AuthContext.jsx';
 import { FamilyProvider } from './context/FamilyContext.jsx';
@@ -46,7 +46,7 @@ function LoadingScreen() {
         <div className="grid gap-6 sm:grid-cols-2"><Skeleton className="h-72 rounded-[30px]" /><Skeleton className="h-72 rounded-[30px]" /></div>
       </main>
       <nav className="fixed inset-x-0 bottom-0 px-3 pb-[calc(6px+env(safe-area-inset-bottom))] lg:hidden">
-        <div className="grid h-[62px] grid-cols-5 items-center rounded-[22px] border border-white/80 bg-paper/90 px-1.5 shadow-[0_10px_32px_rgba(32,49,44,0.14)] backdrop-blur-2xl">
+        <div className="grid h-[62px] grid-cols-5 items-center rounded-[22px] border border-white/70 bg-[linear-gradient(115deg,rgba(232,242,237,0.94),rgba(255,254,251,0.92)_52%,rgba(252,239,233,0.92))] px-1.5 shadow-[0_10px_32px_rgba(32,49,44,0.14)] backdrop-blur-2xl">
           {Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className={`mx-auto ${index === 2 ? '-mt-5 size-[50px] rounded-[17px]' : 'size-8 rounded-[11px]'}`} />)}
         </div>
       </nav>
@@ -54,26 +54,93 @@ function LoadingScreen() {
   );
 }
 
-export default function App() {
+function StartupSplash({ authLoading }) {
+  const [minimumElapsed, setMinimumElapsed] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const minimumTimer = window.setTimeout(() => setMinimumElapsed(true), reduceMotion ? 120 : 1250);
+    return () => window.clearTimeout(minimumTimer);
+  }, []);
+
+  useEffect(() => {
+    if (!minimumElapsed || authLoading) return undefined;
+
+    setLeaving(true);
+    const exitTimer = window.setTimeout(() => setVisible(false), 460);
+    return () => window.clearTimeout(exitTimer);
+  }, [authLoading, minimumElapsed]);
+
+  useEffect(() => {
+    const fallbackTimer = window.setTimeout(() => setLeaving(true), 3200);
+    const removeTimer = window.setTimeout(() => setVisible(false), 3660);
+    return () => {
+      window.clearTimeout(fallbackTimer);
+      window.clearTimeout(removeTimer);
+    };
+  }, []);
+
+  if (!visible) return null;
+
   return (
-    <Suspense fallback={<LoadingScreen />}>
-      <Routes>
-        <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
-        <Route path="/signup" element={<GuestRoute><Signup /></GuestRoute>} />
-        <Route path="/verify-email" element={<VerifyEmail />} />
-        <Route path="/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
-        <Route path="/reset-password" element={<GuestRoute><ResetPassword /></GuestRoute>} />
-        <Route element={<ProtectedRoute />}>
-          <Route index element={<Home />} />
-          <Route path="plans" element={<Plans />} />
-          <Route path="add" element={<TransactionForm />} />
-          <Route path="transactions/:id/edit" element={<TransactionForm />} />
-          <Route path="categories" element={<Categories />} />
-          <Route path="reports" element={<Reports />} />
-          <Route path="settings" element={<Settings />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Suspense>
+    <div
+      aria-label="Đang mở MoneyMate"
+      className={`startup-splash${leaving ? ' startup-splash--leaving' : ''}`}
+      role="status"
+    >
+      <div className="startup-splash__orb startup-splash__orb--mint" />
+      <div className="startup-splash__orb startup-splash__orb--coral" />
+      <div className="startup-splash__grain" />
+
+      <div className="startup-splash__content">
+        <div className="startup-mark" aria-hidden="true">
+          <span className="startup-mark__card startup-mark__card--back" />
+          <span className="startup-mark__card startup-mark__card--middle" />
+          <span className="startup-mark__wallet">
+            <span className="startup-mark__letter">M</span>
+            <span className="startup-mark__clasp" />
+          </span>
+          <span className="startup-mark__coin">+</span>
+        </div>
+
+        <div className="startup-brand">
+          <div className="startup-brand__name">MoneyMate</div>
+          <div className="startup-brand__tagline">Cùng vun vén mỗi ngày</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const { loading: authLoading } = useAuth();
+
+  return (
+    <>
+      <StartupSplash authLoading={authLoading} />
+      <div className="startup-app">
+        <Suspense fallback={<LoadingScreen />}>
+          <Routes>
+            <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
+            <Route path="/signup" element={<GuestRoute><Signup /></GuestRoute>} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
+            <Route path="/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
+            <Route path="/reset-password" element={<GuestRoute><ResetPassword /></GuestRoute>} />
+            <Route element={<ProtectedRoute />}>
+              <Route index element={<Home />} />
+              <Route path="plans" element={<Plans />} />
+              <Route path="add" element={<TransactionForm />} />
+              <Route path="transactions/:id/edit" element={<TransactionForm />} />
+              <Route path="categories" element={<Categories />} />
+              <Route path="reports" element={<Reports />} />
+              <Route path="settings" element={<Settings />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </div>
+    </>
   );
 }
