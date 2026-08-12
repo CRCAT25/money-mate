@@ -66,10 +66,10 @@ export default function Home() {
     return () => { active = false; };
   }, [month, notify, loadCache, baseLoading]);
 
-  const dailyExpenses = useMemo(() => transactions.reduce((totals, transaction) => {
-    if (transaction.type === 'expense') {
-      totals[transaction.transactionDate] = (totals[transaction.transactionDate] || 0) + Number(transaction.amount);
-    }
+  const dailyCashflow = useMemo(() => transactions.reduce((totals, transaction) => {
+    const day = totals[transaction.transactionDate] || { income: 0, expense: 0 };
+    day[transaction.type] += Number(transaction.amount);
+    totals[transaction.transactionDate] = day;
     return totals;
   }, {}), [transactions]);
 
@@ -100,7 +100,7 @@ export default function Home() {
             <div key={day} className={`py-1.5 text-center text-[10px] font-semibold ${index === 5 ? 'text-[#1698bf]' : index === 6 ? 'text-coral' : 'text-ink/45'}`}>{day}</div>
           ))}
         </div>
-        {loading ? <CalendarSkeleton /> : <CashflowCalendar month={month} dailyExpenses={dailyExpenses} />}
+        {loading ? <CalendarSkeleton /> : <CashflowCalendar month={month} dailyCashflow={dailyCashflow} />}
         <div className="grid grid-cols-3 border-t border-ink/[0.07] bg-white/55">
           <SummaryItem label="Thu nhập" value={summary?.income} currency={family.currency} tone="income" loading={loading} />
           <SummaryItem label="Chi tiêu" value={summary?.expense} currency={family.currency} tone="expense" loading={loading} />
@@ -131,7 +131,7 @@ export default function Home() {
   );
 }
 
-function CashflowCalendar({ month, dailyExpenses }) {
+function CashflowCalendar({ month, dailyCashflow }) {
   const [year, monthNumber] = month.split('-').map(Number);
   const firstDay = new Date(Date.UTC(year, monthNumber - 1, 1));
   const leadingDays = (firstDay.getUTCDay() + 6) % 7;
@@ -146,7 +146,7 @@ function CashflowCalendar({ month, dailyExpenses }) {
         const dateKey = date.toISOString().slice(0, 10);
         const inCurrentMonth = date.getUTCMonth() === monthNumber - 1;
         const dayOfWeek = index % 7;
-        const expense = dailyExpenses[dateKey];
+        const cashflow = dailyCashflow[dateKey];
         const isToday = dateKey === todayKey;
 
         return (
@@ -155,7 +155,12 @@ function CashflowCalendar({ month, dailyExpenses }) {
             className={`relative min-h-[40px] border-b border-r border-ink/[0.06] p-0.5 sm:min-h-[52px] sm:p-1 ${inCurrentMonth ? 'bg-white/35' : 'bg-ink/[0.018]'} ${isToday ? 'bg-sun/15' : ''}`}
           >
             <span className={`text-[11px] font-bold sm:text-xs ${!inCurrentMonth ? 'text-ink/20' : dayOfWeek === 5 ? 'text-[#1698bf]' : dayOfWeek === 6 ? 'text-coral' : 'text-ink/60'}`}>{date.getUTCDate()}</span>
-            {inCurrentMonth && expense > 0 && <div className="mt-1 whitespace-nowrap text-right text-[7px] font-normal tracking-[-0.02em] text-coral sm:mt-1.5 sm:text-[9px]">{formatCalendarAmount(expense)}</div>}
+            {inCurrentMonth && cashflow && (
+              <div className="mt-0.5 flex flex-col items-end whitespace-nowrap text-[6.5px] font-normal leading-[8px] tracking-[-0.03em] sm:mt-1 sm:text-[8px] sm:leading-[10px]">
+                {cashflow.income > 0 && <span className="text-[#2D8A72]">+{formatCalendarAmount(cashflow.income)}</span>}
+                {cashflow.expense > 0 && <span className="text-coral">−{formatCalendarAmount(cashflow.expense)}</span>}
+              </div>
+            )}
           </div>
         );
       })}

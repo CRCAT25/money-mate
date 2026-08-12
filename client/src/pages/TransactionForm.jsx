@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, Grid2X2, LoaderCircle } from 'lucide-react';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
@@ -26,6 +26,7 @@ export default function TransactionForm() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(Boolean(transactionId));
+  const amountInput = useRef(null);
 
   const filteredCategories = useMemo(() => categories.filter((item) => item.type === form.type), [categories, form.type]);
   useEffect(() => {
@@ -63,7 +64,12 @@ export default function TransactionForm() {
       const { data } = transactionId ? await api.patch(`/transactions/${transactionId}`, payload) : await api.post('/transactions', payload);
       notify(data.message);
       touch();
-      navigate('/');
+      if (transactionId) {
+        navigate('/');
+      } else {
+        setForm((current) => ({ ...current, amount: '', categoryId: '', note: '' }));
+        window.requestAnimationFrame(() => amountInput.current?.focus());
+      }
     } catch (error) {
       notify(errorMessage(error), 'error');
     } finally {
@@ -114,6 +120,7 @@ export default function TransactionForm() {
               <span className="text-[13px] font-medium text-ink/68 sm:text-sm">{form.type === 'expense' ? 'Tiền chi' : 'Tiền thu'}</span>
               <span className="flex min-w-0 items-center gap-2">
                 <input
+                  ref={amountInput}
                   className="h-9 min-w-0 flex-1 rounded-[9px] bg-sun/12 px-2.5 text-[18px] font-normal tracking-[-0.02em] text-ink outline-none placeholder:text-ink/28 sm:h-10 sm:text-xl"
                   type="text"
                   inputMode="numeric"
