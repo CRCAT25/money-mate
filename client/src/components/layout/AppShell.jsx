@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { flushSync } from 'react-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { BarChart3, Grid2X2, Home, Plus, Sparkles, Target, UserRound } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import Avatar from '../ui/Avatar.jsx';
@@ -18,9 +19,11 @@ const mobileNav = nav.filter((item) => item.to !== '/categories');
 export default function AppShell({ children }) {
   const { user, family, activeSpaceId } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [spaceMenuOpen, setSpaceMenuOpen] = useState(false);
   const holdTimer = useRef(null);
   const heldProfile = useRef(false);
+  const touchNavigation = useRef(null);
   const isHome = location.pathname === '/';
   const isTransactionForm = location.pathname === '/add' || location.pathname.includes('/transactions/');
 
@@ -36,6 +39,11 @@ export default function AppShell({ children }) {
       navigator.vibrate?.(18);
       setSpaceMenuOpen(true);
     }, 480);
+  };
+  const navigateOnTouch = (event, to) => {
+    if (event.pointerType === 'mouse' || location.pathname === to) return;
+    touchNavigation.current = to;
+    flushSync(() => navigate(to));
   };
 
   useEffect(() => {
@@ -56,7 +64,7 @@ export default function AppShell({ children }) {
   }, []);
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[224px_1fr]">
+    <div className="min-h-[100dvh] lg:grid lg:grid-cols-[224px_1fr]">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[224px] flex-col overflow-hidden bg-ink px-4 py-5 text-white lg:flex">
         <div className="absolute -left-20 top-40 size-56 rounded-full bg-forest opacity-30 blur-3xl" />
         <div className="relative mb-8 flex items-center gap-2.5 px-2">
@@ -96,21 +104,24 @@ export default function AppShell({ children }) {
       </aside>
 
       <div className="min-w-0 lg:col-start-2">
-        <main className={`mx-auto min-h-screen max-w-[1440px] px-4 pb-24 sm:px-6 lg:px-9 lg:pb-10 lg:pt-8 xl:px-12 ${isHome ? 'pt-14' : 'pt-4'}`}>
+        <main className={`mx-auto min-h-[100dvh] max-w-[1440px] px-4 pb-24 sm:px-6 lg:px-9 lg:pb-10 lg:pt-8 xl:px-12 ${isHome ? 'pt-14' : 'pt-4'}`}>
           <div key={`${location.pathname}:${activeSpaceId}`} className={isHome ? '' : isTransactionForm ? 'animate-fade-only' : 'animate-fade-in'}>
             {children}
           </div>
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 px-2.5 pb-[calc(7px+env(safe-area-inset-bottom))] lg:hidden">
-        <div className="grid h-[68px] grid-cols-5 items-center rounded-[23px] border border-white/70 bg-[linear-gradient(115deg,rgba(232,242,237,0.94),rgba(255,254,251,0.92)_52%,rgba(252,239,233,0.92))] px-1 shadow-[0_10px_32px_rgba(32,49,44,0.14),0_1px_0_rgba(255,255,255,0.9)_inset] backdrop-blur-2xl">
+      <nav
+        className="pointer-events-auto fixed inset-x-0 z-40 isolate px-2.5 lg:hidden"
+        style={{ bottom: 'max(4px, calc(env(safe-area-inset-bottom) / 2))' }}
+      >
+        <div className="grid h-[68px] w-full transform-gpu grid-cols-5 items-center rounded-[23px] border border-white/70 bg-[linear-gradient(115deg,rgba(232,242,237,0.94),rgba(255,254,251,0.92)_52%,rgba(252,239,233,0.92))] px-1 shadow-[0_10px_32px_rgba(32,49,44,0.14),0_1px_0_rgba(255,255,255,0.9)_inset] backdrop-blur-2xl">
           {mobileNav.map(({ to, mobile, icon: Icon, primary, profile }) => (
             <NavLink
               key={to}
               to={to}
               end={to === '/'}
-              onPointerDown={profile ? startProfileHold : undefined}
+              onPointerDown={profile ? startProfileHold : (event) => navigateOnTouch(event, to)}
               onPointerUp={profile ? () => {
                 cancelProfileHold();
                 window.setTimeout(() => { heldProfile.current = false; }, 0);
@@ -118,18 +129,21 @@ export default function AppShell({ children }) {
               onPointerCancel={profile ? () => { cancelProfileHold(); heldProfile.current = false; } : undefined}
               onPointerLeave={profile ? () => { cancelProfileHold(); heldProfile.current = false; } : undefined}
               onContextMenu={profile ? (event) => event.preventDefault() : undefined}
-              onClick={profile ? (event) => {
-                cancelProfileHold();
-                if (heldProfile.current) {
+              onClick={(event) => {
+                if (profile) {
+                  cancelProfileHold();
+                  if (heldProfile.current) event.preventDefault();
+                } else if (touchNavigation.current === to) {
                   event.preventDefault();
+                  touchNavigation.current = null;
                 }
-              } : undefined}
-              className={({ isActive }) => `relative z-10 flex h-full min-h-[58px] min-w-0 touch-manipulation select-none flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition active:scale-[0.97] ${isActive ? 'text-forest' : 'text-ink/42'}`}
+              }}
+              className={({ isActive }) => `relative z-10 flex h-full min-h-[58px] min-w-0 touch-manipulation select-none flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive ? 'text-forest' : 'text-ink/42'}`}
             >
               {({ isActive }) => (
                 <>
                   {primary ? (
-                    <span className="pointer-events-none -mt-4 grid size-[54px] place-items-center rounded-[18px] border-[4px] border-paper bg-gradient-to-br from-[#ED785F] to-[#DE654E] text-white shadow-[0_8px_18px_rgba(226,111,84,0.3)] transition-transform active:scale-95">
+                    <span className="pointer-events-none -mt-4 grid size-[54px] place-items-center rounded-[18px] border-[4px] border-paper bg-gradient-to-br from-[#ED785F] to-[#DE654E] text-white shadow-[0_8px_18px_rgba(226,111,84,0.3)]">
                       <Icon className="size-[23px]" strokeWidth={2.35} />
                     </span>
                   ) : (

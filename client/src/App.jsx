@@ -40,14 +40,17 @@ function GuestRoute({ children }) {
 
 function LoadingScreen() {
   return (
-    <div aria-label="Đang tải MoneyMate" className="min-h-screen bg-cream" role="status">
+    <div aria-label="Đang tải MoneyMate" className="min-h-[100dvh] bg-cream" role="status">
       <main className="mx-auto max-w-5xl space-y-7 px-4 pb-28 pt-6 sm:px-7 lg:pt-9">
         <div className="space-y-3"><Skeleton className="h-3 w-40" /><Skeleton className="h-11 w-72 max-w-full rounded-2xl" /></div>
         <Skeleton className="h-64 w-full rounded-[32px] bg-ink/10" />
         <div className="grid gap-4 sm:grid-cols-3">{Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="h-24 rounded-[24px]" />)}</div>
         <div className="grid gap-6 sm:grid-cols-2"><Skeleton className="h-72 rounded-[30px]" /><Skeleton className="h-72 rounded-[30px]" /></div>
       </main>
-      <nav className="fixed inset-x-0 bottom-0 px-2.5 pb-[calc(7px+env(safe-area-inset-bottom))] lg:hidden">
+      <nav
+        className="fixed inset-x-0 px-2.5 lg:hidden"
+        style={{ bottom: 'max(4px, calc(env(safe-area-inset-bottom) / 2))' }}
+      >
         <div className="grid h-[68px] grid-cols-5 items-center rounded-[23px] border border-white/70 bg-[linear-gradient(115deg,rgba(232,242,237,0.94),rgba(255,254,251,0.92)_52%,rgba(252,239,233,0.92))] px-1 shadow-[0_10px_32px_rgba(32,49,44,0.14)] backdrop-blur-2xl">
           {Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className={`mx-auto ${index === 2 ? '-mt-4 size-[54px] rounded-[18px]' : 'size-9 rounded-[12px]'}`} />)}
         </div>
