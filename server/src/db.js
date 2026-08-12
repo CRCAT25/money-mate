@@ -305,6 +305,9 @@ async function ensureFamilyColumns(db) {
 
 async function backfillPersonalSpaces(db) {
   const { ensurePersonalSpace } = await import('./spaces.js');
-  const users = await db.prepare('SELECT id FROM users').all();
-  for (const user of users) await ensurePersonalSpace(db, user.id);
+  // PostgreSQL queries normally wait for migration readiness. Use a migration-local
+  // adapter here so the backfill does not wait on the migration that is running it.
+  const migrationDb = db.kind === 'postgres' ? new PostgresAdapter(db.sql) : db;
+  const users = await migrationDb.prepare('SELECT id FROM users').all();
+  for (const user of users) await ensurePersonalSpace(migrationDb, user.id);
 }
