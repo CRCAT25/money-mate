@@ -13,7 +13,7 @@ const emptyPlan = { month: '', planned: 0, spent: 0, remaining: 0, percentage: 0
 
 export default function Plans() {
   const { family } = useAuth();
-  const { revision, getCache, setCache } = useFamilyData();
+  const { revision, setCache, loadCache } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
   const [data, setData] = useState(emptyPlan);
@@ -24,27 +24,21 @@ export default function Plans() {
 
   useEffect(() => {
     const cacheKey = `plans:${month}`;
-    const cached = getCache(cacheKey);
-    if (cached?.revision === revision) {
-      setData(cached.data);
-      setDraftAmounts(createDraftAmounts(cached.data.items));
-      setLoading(false);
-      return undefined;
-    }
-
     let active = true;
     setLoading(true);
-    api.get('/budgets', { params: { month } })
+    loadCache(cacheKey, async () => {
+      const { data: nextData } = await api.get('/budgets', { params: { month } });
+      return { data: nextData };
+    })
       .then(({ data: nextData }) => {
         if (!active) return;
         setData(nextData);
         setDraftAmounts(createDraftAmounts(nextData.items));
-        setCache(cacheKey, { data: nextData, revision });
       })
       .catch((error) => active && notify(errorMessage(error), 'error'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [month, revision, notify, getCache, setCache]);
+  }, [month, notify, loadCache]);
 
   const openEditor = () => {
     setDraftAmounts(createDraftAmounts(data.items));

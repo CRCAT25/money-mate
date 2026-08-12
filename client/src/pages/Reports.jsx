@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer,
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import Skeleton, { ChartSkeleton, TransactionListSkeleton } from '../components/ui/Skeleton.jsx';
 import TransactionList from '../components/TransactionList.jsx';
+import ConfirmModal from '../components/ui/ConfirmModal.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -12,7 +13,7 @@ import { currentMonth, formatMoney } from '../utils/formatters.js';
 
 export default function Reports() {
   const { family } = useAuth();
-  const { categories, familyDetails, revision, touch, loading: baseLoading, getCache, setCache } = useFamilyData();
+  const { categories, familyDetails, touch, loading: baseLoading, loadCache } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
   const [type, setType] = useState('expense');
@@ -20,45 +21,42 @@ export default function Reports() {
   const [memberId, setMemberId] = useState('');
   const [data, setData] = useState({ summary: null, trend: [], transactions: [] });
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const cacheKey = `reports:${month}:${memberId}:${categoryId}`;
-    const cached = getCache(cacheKey);
-    if (cached?.revision === revision) {
-      setData(cached.data);
-      setLoading(false);
-      return undefined;
-    }
-
     let active = true; setLoading(true);
     const transactionParams = { month, limit: 200 };
     if (categoryId) transactionParams.categoryId = categoryId;
     if (memberId) transactionParams.memberId = memberId;
     const summaryParams = { month };
     if (memberId) summaryParams.memberId = memberId;
-    Promise.all([
-      api.get('/reports/summary', { params: summaryParams }),
-      api.get('/reports/trend', { params: { endMonth: month, months: 6 } }),
-      api.get('/transactions', { params: transactionParams }),
-    ]).then(([summary, trend, transactions]) => {
+    loadCache(cacheKey, async () => {
+      const [summary, trend, transactions] = await Promise.all([
+        api.get('/reports/summary', { params: summaryParams }),
+        api.get('/reports/trend', { params: { endMonth: month, months: 6 } }),
+        api.get('/transactions', { params: transactionParams }),
+      ]);
+      return { data: { summary: summary.data, trend: trend.data, transactions: transactions.data } };
+    }).then(({ data: nextData }) => {
       if (!active) return;
-      const nextData = { summary: summary.data, trend: trend.data, transactions: transactions.data };
       setData(nextData);
-      setCache(cacheKey, { data: nextData, revision });
     })
       .catch((error) => notify(errorMessage(error), 'error'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [month, memberId, categoryId, revision, notify, getCache, setCache]);
+  }, [month, memberId, categoryId, notify, loadCache]);
 
   const chartCategories = useMemo(() => data.summary?.categories.filter((item) => item.type === type) || [], [data.summary, type]);
   const trend = data.trend.map((item) => ({ ...item, label: `T${Number(item.month.slice(5))}` }));
   const contentLoading = loading || baseLoading;
 
   const remove = async (transaction) => {
-    if (!window.confirm(`Xóa giao dịch ${transaction.category.name}?`)) return;
-    try { await api.delete(`/transactions/${transaction.id}`); notify('Đã xóa giao dịch.'); touch(); }
+    setDeleting(true);
+    try { await api.delete(`/transactions/${transaction.id}`); setDeleteTarget(null); notify('Đã xóa giao dịch.'); touch(); }
     catch (error) { notify(errorMessage(error), 'error'); }
+    finally { setDeleting(false); }
   };
   const exportCsv = async () => {
     try {
@@ -106,8 +104,18 @@ export default function Reports() {
           <div><p className="mb-2 text-xs font-extrabold uppercase tracking-[0.15em] text-ink/35">Chi tiết</p><h2 className="section-title">Tất cả giao dịch</h2></div>
           {baseLoading ? <div className="grid gap-2 sm:grid-cols-2"><Skeleton className="h-12 w-44 rounded-2xl" /><Skeleton className="h-12 w-44 rounded-2xl" /></div> : <div className="grid gap-2 sm:grid-cols-2 lg:flex"><label className="relative"><Filter className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink/35" /><select className="field min-w-44 pl-9 text-sm" value={memberId} onChange={(e) => setMemberId(e.target.value)}><option value="">Cả hai thành viên</option>{familyDetails?.members.map((member) => <option value={member.id} key={member.id}>{member.displayName}</option>)}</select></label><select className="field min-w-44 text-sm" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}><option value="">Mọi danh mục</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name} ({category.type === 'expense' ? 'Chi' : 'Thu'})</option>)}</select></div>}
         </div>
-        <div className="mt-4">{contentLoading ? <TransactionListSkeleton rows={5} /> : <TransactionList transactions={data.transactions} currency={family.currency} onDelete={remove} />}</div>
+        <div className="mt-4">{contentLoading ? <TransactionListSkeleton rows={5} /> : <TransactionList transactions={data.transactions} currency={family.currency} onDelete={setDeleteTarget} />}</div>
       </section>
+
+      <ConfirmModal
+        open={Boolean(deleteTarget)}
+        title="Xóa giao dịch?"
+        description={deleteTarget ? `Giao dịch “${deleteTarget.category.name}” sẽ bị xóa khỏi lịch sử và các số liệu báo cáo.` : ''}
+        confirmLabel="Xóa giao dịch"
+        loading={deleting}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => remove(deleteTarget)}
+      />
     </div>
   );
 }

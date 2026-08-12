@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Copy, Grid2X2, ImagePlus, KeyRound, LoaderCircle, LogOut, RefreshCw, Save, Shield, Trash2, UserMinus, Users, X } from 'lucide-react';
 import Avatar from '../components/ui/Avatar.jsx';
+import ConfirmModal from '../components/ui/ConfirmModal.jsx';
 import Skeleton from '../components/ui/Skeleton.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
@@ -18,6 +19,7 @@ export default function Settings() {
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '' });
   const [saving, setSaving] = useState('');
   const [verificationUrl, setVerificationUrl] = useState('');
+  const [confirmation, setConfirmation] = useState(null);
   const avatarInput = useRef(null);
 
   useEffect(() => {
@@ -61,14 +63,16 @@ export default function Settings() {
     catch (error) { notify(errorMessage(error), 'error'); }
   };
   const removeMember = async (member) => {
-    if (!window.confirm(`Xóa ${member.displayName} khỏi gia đình? Các giao dịch cũ vẫn được giữ lại.`)) return;
-    try { await api.delete(`/family/members/${member.id}`); notify('Đã xóa thành viên.'); await reloadBaseData(); }
+    setSaving('remove-member');
+    try { await api.delete(`/family/members/${member.id}`); setConfirmation(null); notify('Đã xóa thành viên.'); await reloadBaseData(); }
     catch (error) { notify(errorMessage(error), 'error'); }
+    finally { setSaving(''); }
   };
   const deleteAccount = async () => {
-    if (!window.confirm('Bạn chắc chắn muốn xóa tài khoản? Thao tác này không thể hoàn tác.')) return;
-    try { await api.delete('/users/me'); await logout(); navigate('/signup'); }
+    setSaving('delete-account');
+    try { await api.delete('/users/me'); setConfirmation(null); await logout(); navigate('/signup'); }
     catch (error) { notify(errorMessage(error), 'error'); }
+    finally { setSaving(''); }
   };
 
   return (
@@ -95,7 +99,7 @@ export default function Settings() {
         </SettingsCard>
 
         <SettingsCard eyebrow="Chia sẻ" title="Thành viên gia đình" icon={Users}>
-          <div className="space-y-3">{familyDetails?.members.map((member) => <div key={member.id} className="flex items-center gap-3 rounded-[14px] border border-ink/[0.06] bg-white/60 p-3"><Avatar user={member} /><div className="min-w-0 flex-1"><div className="truncate text-sm font-bold text-ink">{member.displayName} {member.id === user.id && <span className="font-semibold text-ink/45">(bạn)</span>}</div><div className="truncate text-xs text-ink/50">{member.email} · {member.role === 'owner' ? 'Chủ gia đình' : 'Thành viên'}</div></div>{user.role === 'owner' && member.role === 'member' && <button type="button" onClick={() => removeMember(member)} className="grid size-10 place-items-center rounded-xl text-ink/40 hover:bg-coral/10 hover:text-coral" aria-label="Xóa thành viên"><UserMinus className="size-4" /></button>}</div>)}</div>
+          <div className="space-y-3">{familyDetails?.members.map((member) => <div key={member.id} className="flex items-center gap-3 rounded-[14px] border border-ink/[0.06] bg-white/60 p-3"><Avatar user={member} /><div className="min-w-0 flex-1"><div className="truncate text-sm font-bold text-ink">{member.displayName} {member.id === user.id && <span className="font-semibold text-ink/45">(bạn)</span>}</div><div className="truncate text-xs text-ink/50">{member.email} · {member.role === 'owner' ? 'Chủ gia đình' : 'Thành viên'}</div></div>{user.role === 'owner' && member.role === 'member' && <button type="button" onClick={() => setConfirmation({ type: 'member', member })} className="grid size-10 place-items-center rounded-xl text-ink/40 hover:bg-coral/10 hover:text-coral" aria-label="Xóa thành viên"><UserMinus className="size-4" /></button>}</div>)}</div>
           {familyDetails?.members.length < 2 && <div className="mt-5 rounded-[22px] bg-sun/20 p-4"><div className="text-xs font-extrabold uppercase tracking-[0.12em] text-ink/40">Mã mời người ấy</div><div className="mt-2 flex items-center gap-2"><code className="flex-1 text-xl font-black tracking-[0.16em] text-ink">{familyDetails.inviteCode}</code><button className="grid size-11 place-items-center rounded-xl bg-white text-forest shadow-sm" onClick={() => { navigator.clipboard.writeText(familyDetails.inviteCode); notify('Đã sao chép mã mời.'); }}><Copy className="size-4" /></button>{user.role === 'owner' && <button className="grid size-11 place-items-center rounded-xl bg-white text-forest shadow-sm" onClick={regenerateCode}><RefreshCw className="size-4" /></button>}</div></div>}
         </SettingsCard>
 
@@ -107,8 +111,20 @@ export default function Settings() {
       <section className="rounded-[18px] border border-coral/15 bg-coral/[0.04] p-4 sm:p-5">
         <h2 className="font-editorial text-xl font-semibold text-ink">Phiên đăng nhập & dữ liệu</h2>
         <p className="mt-2 text-sm leading-6 text-ink/50">Bạn có thể đăng xuất trên thiết bị này hoặc xóa vĩnh viễn tài khoản của mình.</p>
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row"><button className="secondary-button" onClick={async () => { await logout(); navigate('/login'); }}><LogOut className="size-4" /> Đăng xuất</button><button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl px-5 font-bold text-coral transition hover:bg-coral/10" onClick={deleteAccount}><Trash2 className="size-4" /> Xóa tài khoản</button></div>
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row"><button className="secondary-button" onClick={async () => { await logout(); navigate('/login'); }}><LogOut className="size-4" /> Đăng xuất</button><button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl px-5 font-bold text-coral transition hover:bg-coral/10" onClick={() => setConfirmation({ type: 'account' })}><Trash2 className="size-4" /> Xóa tài khoản</button></div>
       </section>
+
+      <ConfirmModal
+        open={Boolean(confirmation)}
+        title={confirmation?.type === 'member' ? 'Xóa thành viên?' : 'Xóa tài khoản?'}
+        description={confirmation?.type === 'member'
+          ? `${confirmation.member.displayName} sẽ bị xóa khỏi gia đình. Các giao dịch cũ của thành viên này vẫn được giữ lại.`
+          : 'Tài khoản của bạn sẽ bị xóa vĩnh viễn. Thao tác này không thể hoàn tác.'}
+        confirmLabel={confirmation?.type === 'member' ? 'Xóa thành viên' : 'Xóa tài khoản'}
+        loading={saving === 'remove-member' || saving === 'delete-account'}
+        onClose={() => setConfirmation(null)}
+        onConfirm={() => confirmation?.type === 'member' ? removeMember(confirmation.member) : deleteAccount()}
+      />
     </div>
   );
 }

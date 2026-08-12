@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Edit3, LoaderCircle, Plus, Trash2 } from 'lucide-react';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
+import ConfirmModal from '../components/ui/ConfirmModal.jsx';
 import Modal from '../components/ui/Modal.jsx';
 import Skeleton, { CategoryGridSkeleton } from '../components/ui/Skeleton.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
@@ -18,6 +19,8 @@ export default function Categories() {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(blank);
   const [submitting, setSubmitting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const visible = useMemo(() => categories.filter((item) => item.type === tab), [categories, tab]);
 
   const openCreate = () => { setForm({ ...blank, type: tab }); setModal('create'); };
@@ -33,9 +36,10 @@ export default function Categories() {
     finally { setSubmitting(false); }
   };
   const remove = async (category) => {
-    if (!window.confirm(`Xóa danh mục “${category.name}”?`)) return;
-    try { await api.delete(`/categories/${category.id}`); notify('Đã xóa danh mục.'); await reloadBaseData(); }
+    setDeleting(true);
+    try { await api.delete(`/categories/${category.id}`); setDeleteTarget(null); notify('Đã xóa danh mục.'); await reloadBaseData(); }
     catch (error) { notify(errorMessage(error), 'error'); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -57,7 +61,7 @@ export default function Categories() {
             <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-bold text-ink">{category.name}</h2><p className="mt-0.5 text-[11px] font-semibold text-ink/48">{category.transactionCount} giao dịch {category.isDefault && '· Mặc định'}</p></div>
             <div className="flex gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
               <button onClick={() => openEdit(category)} className="grid size-10 place-items-center rounded-xl text-ink/40 hover:bg-mint hover:text-forest" aria-label="Sửa danh mục"><Edit3 className="size-4" /></button>
-              <button onClick={() => remove(category)} className="grid size-10 place-items-center rounded-xl text-ink/40 hover:bg-coral/10 hover:text-coral" aria-label="Xóa danh mục"><Trash2 className="size-4" /></button>
+              <button onClick={() => setDeleteTarget(category)} className="grid size-10 place-items-center rounded-xl text-ink/40 hover:bg-coral/10 hover:text-coral" aria-label="Xóa danh mục"><Trash2 className="size-4" /></button>
             </div>
           </article>
           ))}
@@ -75,6 +79,16 @@ export default function Categories() {
           <div className="flex gap-3 pt-2"><button type="button" className="secondary-button flex-1" onClick={() => setModal(null)}>Hủy</button><button className="primary-button flex-1" disabled={submitting}>{submitting ? <LoaderCircle className="size-5 animate-spin" /> : 'Lưu danh mục'}</button></div>
         </form>
       </Modal>
+
+      <ConfirmModal
+        open={Boolean(deleteTarget)}
+        title="Xóa danh mục?"
+        description={deleteTarget ? `Danh mục “${deleteTarget.name}” sẽ bị xóa. Danh mục đã có giao dịch sẽ được hệ thống bảo vệ và không thể xóa.` : ''}
+        confirmLabel="Xóa danh mục"
+        loading={deleting}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => remove(deleteTarget)}
+      />
     </div>
   );
 }

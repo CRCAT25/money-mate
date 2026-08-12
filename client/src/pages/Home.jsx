@@ -4,6 +4,7 @@ import { ArrowRight, CalendarDays } from 'lucide-react';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import Skeleton, { TransactionListSkeleton } from '../components/ui/Skeleton.jsx';
 import TransactionList from '../components/TransactionList.jsx';
+import ConfirmModal from '../components/ui/ConfirmModal.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -14,38 +15,57 @@ const weekDays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
 export default function Home() {
   const { family } = useAuth();
-  const { revision, touch, getCache, setCache } = useFamilyData();
+  const { touch, loadCache, loading: baseLoading } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
   const [summary, setSummary] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    const cacheKey = `home:${month}`;
-    const cached = getCache(cacheKey);
-    if (cached?.revision === revision) {
-      setSummary(cached.summary);
-      setTransactions(cached.transactions);
-      setLoading(false);
-      return undefined;
-    }
+    if (baseLoading) return undefined;
 
     let active = true;
     setLoading(true);
-    Promise.all([
-      api.get('/reports/summary', { params: { month } }),
-      api.get('/transactions', { params: { month, limit: 200 } }),
-    ]).then(([summaryResponse, transactionResponse]) => {
+
+    const homeRequest = loadCache(`home:${month}`, async () => {
+      const [summaryResponse, transactionResponse] = await Promise.all([
+        api.get('/reports/summary', { params: { month } }),
+        api.get('/transactions', { params: { month, limit: 200 } }),
+      ]);
+      return { summary: summaryResponse.data, transactions: transactionResponse.data };
+    });
+
+    // Warm the other menu screens while Home is visible. Shared in-flight requests
+    // prevent duplicate calls if the user opens a menu before preloading finishes.
+    loadCache(`plans:${month}`, async () => {
+      const { data } = await api.get('/budgets', { params: { month } });
+      return { data };
+    }).catch(() => {});
+    loadCache(`reports:${month}::`, async () => {
+      const [homeData, trendResponse] = await Promise.all([
+        homeRequest,
+        api.get('/reports/trend', { params: { endMonth: month, months: 6 } }),
+      ]);
+      return {
+        data: {
+          summary: homeData.summary,
+          trend: trendResponse.data,
+          transactions: homeData.transactions,
+        },
+      };
+    }).catch(() => {});
+
+    homeRequest.then((nextData) => {
       if (!active) return;
-      const nextData = { summary: summaryResponse.data, transactions: transactionResponse.data };
       setSummary(nextData.summary);
       setTransactions(nextData.transactions);
-      setCache(cacheKey, { ...nextData, revision });
     }).catch((error) => active && notify(errorMessage(error), 'error'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [month, revision, notify, getCache, setCache]);
+  }, [month, notify, loadCache, baseLoading]);
 
   const dailyExpenses = useMemo(() => transactions.reduce((totals, transaction) => {
     if (transaction.type === 'expense') {
@@ -55,14 +75,17 @@ export default function Home() {
   }, {}), [transactions]);
 
   const remove = async (transaction) => {
-    if (!window.confirm(`Xóa giao dịch ${transaction.category.name}?`)) return;
+    setDeleting(true);
     try {
       await api.delete(`/transactions/${transaction.id}`);
       setTransactions((current) => current.filter((item) => item.id !== transaction.id));
+      setDeleteTarget(null);
       notify('Đã xóa giao dịch.');
       touch();
     } catch (error) {
       notify(errorMessage(error), 'error');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -94,8 +117,18 @@ export default function Home() {
           </div>
           <Link to="/reports" className="flex min-h-10 shrink-0 items-center gap-1 whitespace-nowrap text-xs font-extrabold text-forest sm:text-sm">Xem tất cả <ArrowRight className="size-4" /></Link>
         </div>
-        {loading ? <TransactionListSkeleton compact /> : <TransactionList transactions={transactions.slice(0, 10)} currency={family.currency} onDelete={remove} compact groupByDate showTime />}
+        {loading ? <TransactionListSkeleton compact /> : <TransactionList transactions={transactions.slice(0, 10)} currency={family.currency} onDelete={setDeleteTarget} compact groupByDate showTime />}
       </section>
+
+      <ConfirmModal
+        open={Boolean(deleteTarget)}
+        title="Xóa giao dịch?"
+        description={deleteTarget ? `Giao dịch “${deleteTarget.category.name}” sẽ bị xóa khỏi lịch sử và báo cáo của gia đình.` : ''}
+        confirmLabel="Xóa giao dịch"
+        loading={deleting}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => remove(deleteTarget)}
+      />
     </div>
   );
 }

@@ -169,7 +169,7 @@ function TransactionRow({ transaction, currency, compact, showTime, onDelete, op
             </div>
           )}
         </div>
-        <div className="text-right">
+        <div className="shrink-0 pr-3 text-right sm:pr-4">
           <div className={`whitespace-nowrap text-sm font-normal ${transaction.type === 'income' ? 'text-[#2D8A72]' : 'text-ink'}`}>
             {transaction.type === 'income' ? '+' : '−'}{formatMoney(transaction.amount, currency)}
           </div>

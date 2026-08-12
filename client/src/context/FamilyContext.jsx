@@ -20,6 +20,14 @@ export function FamilyProvider({ children }) {
   const syncRequest = useRef(null);
   const pendingLocalTransactions = useRef(0);
   const pageCache = useRef(new Map());
+  const pageRequests = useRef(new Map());
+  const cacheGeneration = useRef(0);
+
+  const clearPageCache = useCallback(() => {
+    cacheGeneration.current += 1;
+    pageCache.current.clear();
+    pageRequests.current.clear();
+  }, []);
 
   const reloadBaseData = useCallback(async () => {
     if (!user) return;
@@ -29,10 +37,10 @@ export function FamilyProvider({ children }) {
     ]);
     setFamilyDetails(familyResponse.data);
     setCategories(categoriesResponse.data);
-    pageCache.current.clear();
+    clearPageCache();
     if (familyResponse.data.revisions) syncState.current = familyResponse.data.revisions;
     setLoading(false);
-  }, [user]);
+  }, [user, clearPageCache]);
 
   const checkForChanges = useCallback(async () => {
     if (!user) return;
@@ -48,7 +56,7 @@ export function FamilyProvider({ children }) {
       const localTransactions = Math.min(transactionDelta, pendingLocalTransactions.current);
       pendingLocalTransactions.current -= localTransactions;
       const transactionsChanged = transactionDelta > localTransactions;
-      if (baseChanged || transactionsChanged) pageCache.current.clear();
+      if (baseChanged || transactionsChanged) clearPageCache();
       if (baseChanged) await reloadBaseData();
       if (baseChanged || transactionsChanged) setRevision((value) => value + 1);
     }).finally(() => {
@@ -56,7 +64,7 @@ export function FamilyProvider({ children }) {
     });
     syncRequest.current = request;
     return request;
-  }, [user, reloadBaseData]);
+  }, [user, reloadBaseData, clearPageCache]);
 
   useEffect(() => {
     if (!user) {
@@ -64,7 +72,7 @@ export function FamilyProvider({ children }) {
       setCategories([]);
       syncState.current = null;
       pendingLocalTransactions.current = 0;
-      pageCache.current.clear();
+      clearPageCache();
       setLoading(false);
       return;
     }
@@ -73,7 +81,7 @@ export function FamilyProvider({ children }) {
       setLoading(false);
       notify(errorMessage(error), 'error');
     });
-  }, [user, reloadBaseData, notify]);
+  }, [user, reloadBaseData, notify, clearPageCache]);
 
   useEffect(() => {
     if (!user || !syncState.current) return;
@@ -115,14 +123,36 @@ export function FamilyProvider({ children }) {
 
   const getCache = useCallback((key) => pageCache.current.get(key), []);
   const setCache = useCallback((key, value) => pageCache.current.set(key, value), []);
+  const loadCache = useCallback((key, loader) => {
+    const cached = pageCache.current.get(key);
+    if (cached?.revision === revision) return Promise.resolve(cached);
+
+    const requestKey = `${revision}:${key}`;
+    const pending = pageRequests.current.get(requestKey);
+    if (pending) return pending;
+
+    const generation = cacheGeneration.current;
+    const request = Promise.resolve()
+      .then(loader)
+      .then((value) => {
+        const entry = { ...value, revision };
+        if (cacheGeneration.current === generation) pageCache.current.set(key, entry);
+        return entry;
+      })
+      .finally(() => {
+        if (pageRequests.current.get(requestKey) === request) pageRequests.current.delete(requestKey);
+      });
+    pageRequests.current.set(requestKey, request);
+    return request;
+  }, [revision]);
   const touch = useCallback(() => {
     pendingLocalTransactions.current += 1;
-    pageCache.current.clear();
+    clearPageCache();
     setRevision((value) => value + 1);
-  }, []);
+  }, [clearPageCache]);
   const value = useMemo(
-    () => ({ familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache }),
-    [familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache],
+    () => ({ familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache, loadCache }),
+    [familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache, loadCache],
   );
   return <FamilyContext.Provider value={value}>{children}</FamilyContext.Provider>;
 }

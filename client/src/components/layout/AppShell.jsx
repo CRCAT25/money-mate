@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { BarChart3, Grid2X2, Home, Plus, Settings, Sparkles, Target } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -18,6 +19,23 @@ export default function AppShell({ children }) {
   const location = useLocation();
   const isHome = location.pathname === '/';
   const isTransactionForm = location.pathname === '/add' || location.pathname.includes('/transactions/');
+
+  useEffect(() => {
+    if (!isHome) return undefined;
+    const preloadMenuPages = () => Promise.allSettled([
+      import('../../pages/Plans.jsx'),
+      import('../../pages/TransactionForm.jsx'),
+      import('../../pages/Reports.jsx'),
+      import('../../pages/Settings.jsx'),
+    ]);
+
+    if ('requestIdleCallback' in window) {
+      const idleId = window.requestIdleCallback(preloadMenuPages, { timeout: 1200 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+    const timer = window.setTimeout(preloadMenuPages, 300);
+    return () => window.clearTimeout(timer);
+  }, [isHome]);
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[224px_1fr]">
