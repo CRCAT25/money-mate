@@ -6,9 +6,11 @@ import { emitFamily } from '../realtime.js';
 import { bumpFamilyRevision } from '../revisions.js';
 import { id } from '../utils.js';
 import { validate } from '../validation.js';
+import { resolveSpace } from '../spaces.js';
 
 const router = express.Router();
 router.use(authenticate);
+router.use(resolveSpace);
 
 router.get('/', async (req, res) => {
   const categories = await getDb().prepare(`
@@ -17,7 +19,7 @@ router.get('/', async (req, res) => {
     FROM categories c
     WHERE c.family_id = ?
     ORDER BY c.type DESC, c.is_default DESC, LOWER(c.name)
-  `).all(req.user.familyId);
+  `).all(req.space.id);
   res.json(categories.map(mapCategory));
 });
 
@@ -36,9 +38,9 @@ router.post(
       await getDb().prepare(`
         INSERT INTO categories (id, family_id, name, type, icon, color)
         VALUES (?, ?, ?, ?, ?, ?)
-      `).run(category.id, req.user.familyId, category.name.trim(), category.type, category.icon, category.color);
-      await bumpFamilyRevision(getDb(), req.user.familyId, { base: true, transactions: true });
-      emitFamily(req.user.familyId, 'categories:changed');
+      `).run(category.id, req.space.id, category.name.trim(), category.type, category.icon, category.color);
+      await bumpFamilyRevision(getDb(), req.space.id, { base: true, transactions: true });
+      emitFamily(req.space.id, 'categories:changed');
       res.status(201).json({ ...category, isDefault: false, transactionCount: 0 });
     } catch (error) {
       if (isUniqueError(error)) return res.status(409).json({ message: 'Danh mục này đã tồn tại.' });
@@ -61,10 +63,10 @@ router.patch(
       const result = await getDb().prepare(`
         UPDATE categories SET name = ?, icon = ?, color = ?
         WHERE id = ? AND family_id = ?
-      `).run(req.body.name.trim(), req.body.icon, req.body.color, req.params.id, req.user.familyId);
+      `).run(req.body.name.trim(), req.body.icon, req.body.color, req.params.id, req.space.id);
       if (!result.changes) return res.status(404).json({ message: 'Không tìm thấy danh mục.' });
-      await bumpFamilyRevision(getDb(), req.user.familyId, { base: true, transactions: true });
-      emitFamily(req.user.familyId, 'categories:changed');
+      await bumpFamilyRevision(getDb(), req.space.id, { base: true, transactions: true });
+      emitFamily(req.space.id, 'categories:changed');
       res.json({ message: 'Đã cập nhật danh mục.' });
     } catch (error) {
       if (isUniqueError(error)) return res.status(409).json({ message: 'Tên danh mục này đã tồn tại.' });
@@ -78,14 +80,14 @@ router.delete('/:id', [param('id').isUUID()], validate, async (req, res) => {
   const category = await db.prepare(`
     SELECT c.*, (SELECT COUNT(*) FROM transactions t WHERE t.category_id = c.id) AS transaction_count
     FROM categories c WHERE c.id = ? AND c.family_id = ?
-  `).get(req.params.id, req.user.familyId);
+  `).get(req.params.id, req.space.id);
   if (!category) return res.status(404).json({ message: 'Không tìm thấy danh mục.' });
   if (Number(category.transaction_count) > 0) {
     return res.status(409).json({ message: `Danh mục đang có ${category.transaction_count} giao dịch và chưa thể xóa.` });
   }
   await db.prepare('DELETE FROM categories WHERE id = ?').run(category.id);
-  await bumpFamilyRevision(db, req.user.familyId, { base: true, transactions: true });
-  emitFamily(req.user.familyId, 'categories:changed');
+  await bumpFamilyRevision(db, req.space.id, { base: true, transactions: true });
+  emitFamily(req.space.id, 'categories:changed');
   res.status(204).end();
 });
 

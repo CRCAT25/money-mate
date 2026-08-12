@@ -45,7 +45,7 @@ export default function Categories() {
   return (
     <div className="space-y-5 sm:space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div><p className="mb-1.5 text-[10px] font-extrabold uppercase tracking-[0.16em] text-coral">Gọn gàng theo cách của bạn</p><h1 className="font-editorial text-[28px] font-semibold tracking-[-0.03em] text-ink sm:text-4xl">Danh mục chung.</h1><p className="mt-2 max-w-xl text-sm leading-5 text-ink/58">Cả hai cùng dùng một bộ danh mục để báo cáo luôn rõ ràng và nhất quán.</p></div>
+        <div><p className="mb-1.5 text-[10px] font-extrabold uppercase tracking-[0.16em] text-coral">Gọn gàng theo cách của bạn</p><h1 className="font-editorial text-[28px] font-semibold tracking-[-0.03em] text-ink sm:text-4xl">Danh mục chung.</h1><p className="mt-2 max-w-xl text-sm leading-5 text-ink/58">Mọi thành viên cùng dùng một bộ danh mục để báo cáo luôn rõ ràng và nhất quán.</p></div>
         <button className="primary-button" onClick={openCreate}><Plus className="size-5" /> Thêm danh mục</button>
       </div>
 

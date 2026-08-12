@@ -4,9 +4,11 @@ import { authenticate } from '../auth.js';
 import { getDb } from '../db.js';
 import { monthRange } from '../utils.js';
 import { validate } from '../validation.js';
+import { resolveSpace } from '../spaces.js';
 
 const router = express.Router();
 router.use(authenticate);
+router.use(resolveSpace);
 
 router.get(
   '/summary',
@@ -16,7 +18,7 @@ router.get(
     const db = getDb();
     const range = monthRange(req.query.month);
     const memberFilter = req.query.memberId ? ' AND t.assigned_to = ?' : '';
-    const params = [req.user.familyId, range.start, range.end];
+    const params = [req.space.id, range.start, range.end];
     if (req.query.memberId) params.push(req.query.memberId);
 
     const totals = await db.prepare(`
@@ -70,7 +72,7 @@ router.get(
       WHERE family_id = ? AND transaction_date >= ? AND transaction_date < ?
       GROUP BY substr(transaction_date, 1, 7)
       ORDER BY month
-    `).all(req.user.familyId, start.toISOString().slice(0, 10), endExclusive.toISOString().slice(0, 10));
+    `).all(req.space.id, start.toISOString().slice(0, 10), endExclusive.toISOString().slice(0, 10));
 
     const byMonth = new Map(rows.map((row) => [row.month, {
       ...row,
@@ -97,7 +99,7 @@ router.get('/export', [query('month').matches(/^\d{4}-\d{2}$/)], validate, async
     JOIN users u ON u.id = t.assigned_to
     WHERE t.family_id = ? AND t.transaction_date >= ? AND t.transaction_date < ?
     ORDER BY t.transaction_date DESC
-  `).all(req.user.familyId, range.start, range.end);
+  `).all(req.space.id, range.start, range.end);
 
   const escape = (value) => `"${String(value).replaceAll('"', '""')}"`;
   const csv = [

@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Check, LoaderCircle, Pencil, X } from 'lucide-react';
+import { CalendarCheck, CalendarRange, Check, LoaderCircle, Pencil, X } from 'lucide-react';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
+import Modal from '../components/ui/Modal.jsx';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import Skeleton from '../components/ui/Skeleton.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import api, { errorMessage } from '../utils/api.js';
-import { currentMonth, formatMoney } from '../utils/formatters.js';
+import { currentMonth, formatMoney, shiftMonth } from '../utils/formatters.js';
 
 const emptyPlan = { month: '', planned: 0, spent: 0, remaining: 0, percentage: 0, items: [] };
 
@@ -17,10 +18,12 @@ export default function Plans() {
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
   const [data, setData] = useState(emptyPlan);
+  const [previousAmounts, setPreviousAmounts] = useState({});
   const [draftAmounts, setDraftAmounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveOptionsOpen, setSaveOptionsOpen] = useState(false);
 
   useEffect(() => {
     const cacheKey = `plans:${month}`;
@@ -37,6 +40,15 @@ export default function Plans() {
       })
       .catch((error) => active && notify(errorMessage(error), 'error'))
       .finally(() => active && setLoading(false));
+
+    const previousMonth = shiftMonth(month, -1);
+    loadCache(`plans:${previousMonth}`, async () => {
+      const { data: previousData } = await api.get('/budgets', { params: { month: previousMonth } });
+      return { data: previousData };
+    }).then(({ data: previousData }) => {
+      if (!active) return;
+      setPreviousAmounts(Object.fromEntries(previousData.items.map((item) => [item.category.id, item.amount])));
+    }).catch(() => active && setPreviousAmounts({}));
     return () => { active = false; };
   }, [month, notify, loadCache]);
 
@@ -47,15 +59,31 @@ export default function Plans() {
 
   const closeEditor = () => {
     setDraftAmounts(createDraftAmounts(data.items));
+    setSaveOptionsOpen(false);
     setEditing(false);
   };
 
-  const savePlan = async () => {
-    const changes = data.items.map((item) => {
-      const rawAmount = draftAmounts[item.category.id] || '';
-      const amount = rawAmount ? Number(rawAmount) : 0;
-      return { item, amount };
-    }).filter(({ item, amount }) => amount !== item.amount);
+  const getChanges = () => data.items.map((item) => {
+    const rawAmount = draftAmounts[item.category.id] || '';
+    const amount = rawAmount ? Number(rawAmount) : 0;
+    return { item, amount };
+  }).filter(({ item, amount }) => amount !== item.amount);
+
+  const chooseSaveScope = () => {
+    const changes = getChanges();
+    if (changes.some(({ amount }) => !Number.isInteger(amount) || amount < 0 || amount > 999999999999)) {
+      notify('Ngân sách không hợp lệ.', 'error');
+      return;
+    }
+    if (!changes.length) {
+      setEditing(false);
+      return;
+    }
+    setSaveOptionsOpen(true);
+  };
+
+  const savePlan = async (scope) => {
+    const changes = getChanges();
 
     if (changes.some(({ amount }) => !Number.isInteger(amount) || amount < 0 || amount > 999999999999)) {
       notify('Ngân sách không hợp lệ.', 'error');
@@ -68,17 +96,18 @@ export default function Plans() {
 
     setSaving(true);
     try {
-      await Promise.all(changes.map(({ item, amount }) => {
-        if (!amount && item.id) return api.delete(`/budgets/${item.id}`);
-        if (amount) return api.post('/budgets', { month, categoryId: item.category.id, amount });
-        return Promise.resolve();
-      }));
+      const { data: saveResult } = await api.post('/budgets/batch', {
+        month,
+        scope,
+        items: changes.map(({ item, amount }) => ({ categoryId: item.category.id, amount })),
+      });
       const { data: nextData } = await api.get('/budgets', { params: { month } });
       setData(nextData);
       setDraftAmounts(createDraftAmounts(nextData.items));
       setCache(`plans:${month}`, { data: nextData, revision });
+      setSaveOptionsOpen(false);
       setEditing(false);
-      notify('Đã cập nhật kế hoạch chi tiêu.');
+      notify(saveResult.message);
     } catch (error) {
       notify(errorMessage(error), 'error');
     } finally {
@@ -100,7 +129,7 @@ export default function Plans() {
         <button
           type="button"
           className={`grid size-9 place-items-center rounded-[11px] shadow-sm transition active:scale-95 ${editing ? 'bg-[#3B82D0] text-white' : 'bg-white/80 text-ink/55'}`}
-          onClick={editing ? savePlan : openEditor}
+          onClick={editing ? chooseSaveScope : openEditor}
           disabled={saving || loading}
           aria-label={editing ? 'Lưu kế hoạch' : 'Chỉnh sửa kế hoạch'}
         >
@@ -117,6 +146,7 @@ export default function Plans() {
           items={data.items}
           currency={family.currency}
           draftAmounts={draftAmounts}
+          previousAmounts={previousAmounts}
           total={draftTotal}
           saving={saving}
           onChange={(categoryId, value) => setDraftAmounts((current) => ({ ...current, [categoryId]: value }))}
@@ -127,6 +157,14 @@ export default function Plans() {
           <BudgetOverview items={data.items} currency={family.currency} onEdit={openEditor} />
         </>
       )}
+
+      <SaveBudgetOptions
+        open={saveOptionsOpen}
+        saving={saving}
+        onClose={() => { if (!saving) setSaveOptionsOpen(false); }}
+        onSaveMonth={() => savePlan('month')}
+        onSaveFuture={() => savePlan('future')}
+      />
     </div>
   );
 }
@@ -226,7 +264,7 @@ function BudgetViewRow({ item, currency, index }) {
   );
 }
 
-function BudgetEditor({ items, currency, draftAmounts, total, saving, onChange }) {
+function BudgetEditor({ items, currency, draftAmounts, previousAmounts, total, saving, onChange }) {
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-4 rounded-[16px] border border-ink/[0.065] bg-paper/90 px-4 py-3 shadow-card">
@@ -241,6 +279,7 @@ function BudgetEditor({ items, currency, draftAmounts, total, saving, onChange }
             item={item}
             currency={currency}
             value={draftAmounts[item.category.id] || ''}
+            previousAmount={previousAmounts[item.category.id] || 0}
             index={index}
             disabled={saving}
             onChange={(value) => onChange(item.category.id, value)}
@@ -251,7 +290,7 @@ function BudgetEditor({ items, currency, draftAmounts, total, saving, onChange }
   );
 }
 
-function BudgetEditRow({ item, currency, value, index, disabled, onChange }) {
+function BudgetEditRow({ item, currency, value, previousAmount, index, disabled, onChange }) {
   const currencyLabel = currency === 'VND' ? '₫' : currency;
   const inputId = `budget-${item.category.id}`;
   return (
@@ -263,18 +302,39 @@ function BudgetEditRow({ item, currency, value, index, disabled, onChange }) {
       <div className="relative w-[130px] shrink-0 border-b border-ink/10 sm:w-[150px]">
         <input
           id={inputId}
-          className="h-9 w-full border-0 bg-transparent pl-1 pr-6 text-right text-sm font-normal tabular-nums tracking-[-0.015em] text-ink shadow-none placeholder:text-[10px] placeholder:font-normal placeholder:text-ink/24 focus:border-0 focus:bg-transparent focus:outline-none focus:ring-0"
+          className="h-9 w-full border-0 bg-transparent pl-1 pr-6 text-right text-sm font-normal tabular-nums tracking-[-0.015em] text-ink shadow-none placeholder:text-xs placeholder:font-normal placeholder:text-ink/28 focus:border-0 focus:bg-transparent focus:outline-none focus:ring-0"
           type="text"
           inputMode="numeric"
           value={formatInputAmount(value)}
           onChange={(event) => onChange(event.target.value.replace(/\D/g, '').slice(0, 12))}
           onFocus={(event) => event.currentTarget.select()}
-          placeholder="Nhập tiền"
+          placeholder={previousAmount > 0 ? formatInputAmount(previousAmount) : 'Nhập tiền'}
           disabled={disabled}
         />
         <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[10px] font-normal text-ink/32">{currencyLabel}</span>
       </div>
     </article>
+  );
+}
+
+function SaveBudgetOptions({ open, saving, onClose, onSaveMonth, onSaveFuture }) {
+  return (
+    <Modal open={open} title="Chọn cách lưu" onClose={onClose} compact>
+      <p className="-mt-1 text-[12px] font-normal leading-5 text-ink/48">Bạn muốn áp dụng những thay đổi ngân sách này trong khoảng thời gian nào?</p>
+      <div className="mt-5 space-y-2.5">
+        <button type="button" className="flex min-h-[62px] w-full items-center gap-3 rounded-[15px] border border-ink/[0.07] bg-white/70 px-3.5 text-left transition active:scale-[0.985] hover:bg-white" onClick={onSaveMonth} disabled={saving}>
+          <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-[#3B82D0]/10 text-[#3B82D0]"><CalendarCheck className="size-[19px]" /></span>
+          <span className="min-w-0 flex-1"><strong className="block text-[13px] font-semibold text-ink">Chỉ thay đổi tháng này</strong><small className="mt-0.5 block text-[10px] font-normal leading-4 text-ink/42">Các tháng sau giữ nguyên kế hoạch hiện có.</small></span>
+          {saving && <LoaderCircle className="size-4 animate-spin text-ink/35" />}
+        </button>
+        <button type="button" className="flex min-h-[62px] w-full items-center gap-3 rounded-[15px] border border-ink/[0.07] bg-mint/55 px-3.5 text-left transition active:scale-[0.985] hover:bg-mint/75" onClick={onSaveFuture} disabled={saving}>
+          <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-forest/10 text-forest"><CalendarRange className="size-[19px]" /></span>
+          <span className="min-w-0 flex-1"><strong className="block text-[13px] font-semibold text-ink">Tháng này và các tháng sau</strong><small className="mt-0.5 block text-[10px] font-normal leading-4 text-ink/42">Dùng làm mức ngân sách mới cho những tháng tiếp theo.</small></span>
+          {saving && <LoaderCircle className="size-4 animate-spin text-forest/45" />}
+        </button>
+        <button type="button" className="min-h-11 w-full rounded-xl text-xs font-medium text-ink/45 transition hover:bg-ink/[0.04]" onClick={onClose} disabled={saving}>Bỏ qua</button>
+      </div>
+    </Modal>
   );
 }
 

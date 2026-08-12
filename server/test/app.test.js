@@ -101,7 +101,67 @@ test('transaction validation rejects a category with the wrong type', async () =
   assert.match(response.body.message, /không phù hợp/);
 });
 
-test('a partner can join by invite code and a third member is rejected', async () => {
+test('personal spaces are isolated from every other family member', async () => {
+  const ownerLogin = await request(app).post('/api/auth/login')
+    .send({ email: 'owner@example.com', password: 'MoneyMate123!' }).expect(200);
+  const ownerAuth = { Authorization: `Bearer ${ownerLogin.body.accessToken}` };
+  const ownerPersonal = ownerLogin.body.spaces.find((space) => space.type === 'personal');
+  const familySpace = ownerLogin.body.spaces.find((space) => space.type === 'family');
+  assert.ok(ownerPersonal);
+  assert.ok(familySpace);
+
+  const personalHeaders = { ...ownerAuth, 'X-MoneyMate-Space-Id': ownerPersonal.id };
+  const personalCategories = await request(app).get('/api/categories').set(personalHeaders).expect(200);
+  const personalFood = personalCategories.body.find((category) => category.type === 'expense');
+  const personalTransaction = await request(app).post('/api/transactions').set(personalHeaders).send({
+    type: 'expense', amount: 99000, categoryId: personalFood.id,
+    transactionDate: '2026-08-10', note: 'Khoản riêng',
+  }).expect(201);
+
+  const familySummary = await request(app).get('/api/reports/summary?month=2026-08')
+    .set({ ...ownerAuth, 'X-MoneyMate-Space-Id': familySpace.id }).expect(200);
+  assert.equal(familySummary.body.expense, 125000);
+
+  const intruderRegistration = await request(app).post('/api/auth/register').send({
+    displayName: 'Người dùng khác', email: 'intruder@example.com',
+    password: 'Intruder123!', mode: 'personal',
+  }).expect(201);
+  const intruderToken = new URL(intruderRegistration.body.previewVerificationUrl).searchParams.get('token');
+  await request(app).post('/api/auth/verify-email').send({ token: intruderToken }).expect(200);
+  const partnerLogin = await request(app).post('/api/auth/login')
+    .send({ email: 'intruder@example.com', password: 'Intruder123!' }).expect(200);
+  const partnerAuth = { Authorization: `Bearer ${partnerLogin.body.accessToken}` };
+  await request(app).get(`/api/transactions/${personalTransaction.body.id}`)
+    .set({ ...partnerAuth, 'X-MoneyMate-Space-Id': ownerPersonal.id }).expect(403);
+  await request(app).get(`/api/spaces/${ownerPersonal.id}`).set(partnerAuth).expect(404);
+});
+
+test('a personal-only account can create and leave a family later', async () => {
+  const registration = await request(app).post('/api/auth/register').send({
+    displayName: 'Người dùng riêng', email: 'personal@example.com',
+    password: 'Personal123!', mode: 'personal',
+  }).expect(201);
+  const token = new URL(registration.body.previewVerificationUrl).searchParams.get('token');
+  await request(app).post('/api/auth/verify-email').send({ token }).expect(200);
+  const login = await request(app).post('/api/auth/login')
+    .send({ email: 'personal@example.com', password: 'Personal123!' }).expect(200);
+  assert.equal(login.body.spaces.length, 1);
+  assert.equal(login.body.spaces[0].type, 'personal');
+  const auth = { Authorization: `Bearer ${login.body.accessToken}` };
+
+  const created = await request(app).post('/api/spaces/family').set(auth)
+    .send({ name: 'Nhà riêng mới', currency: 'VND', language: 'vi' }).expect(201);
+  assert.equal(created.body.space.type, 'family');
+  const listed = await request(app).get('/api/spaces').set(auth).expect(200);
+  assert.equal(listed.body.spaces.length, 2);
+
+  await request(app).delete('/api/spaces/family').set(auth).expect(204);
+  const after = await request(app).get('/api/spaces').set(auth).expect(200);
+  assert.equal(after.body.spaces.length, 1);
+  assert.equal(after.body.spaces[0].type, 'personal');
+});
+
+test('multiple family members can join by invite code', async () => {
   const ownerLogin = await request(app)
     .post('/api/auth/login')
     .send({ email: 'owner@example.com', password: 'MoneyMate123!' })
@@ -132,7 +192,7 @@ test('a partner can join by invite code and a third member is rejected', async (
     .set({ Authorization: `Bearer ${partnerLogin.body.accessToken}` })
     .expect(403);
 
-  await request(app)
+  const thirdRegistration = await request(app)
     .post('/api/auth/register')
     .send({
       displayName: 'Người thứ ba',
@@ -141,10 +201,12 @@ test('a partner can join by invite code and a third member is rejected', async (
       mode: 'join',
       inviteCode: family.body.inviteCode,
     })
-    .expect(409);
+    .expect(201);
+  const thirdVerificationToken = new URL(thirdRegistration.body.previewVerificationUrl).searchParams.get('token');
+  await request(app).post('/api/auth/verify-email').send({ token: thirdVerificationToken }).expect(200);
 
   const updatedFamily = await request(app).get('/api/family').set(ownerAuth).expect(200);
-  assert.equal(updatedFamily.body.members.length, 2);
+  assert.equal(updatedFamily.body.members.length, 3);
 });
 
 test('profile, family settings, member removal and account deletion work', async () => {
@@ -180,12 +242,15 @@ test('profile, family settings, member removal and account deletion work', async
 
   await request(app).delete(`/api/family/members/${partner.id}`).set(ownerAuth).expect(204);
   const remaining = await request(app).get('/api/family').set(ownerAuth).expect(200);
-  assert.equal(remaining.body.members.length, 1);
+  assert.equal(remaining.body.members.length, 2);
+  assert.ok(remaining.body.members.some((member) => member.email === 'third@example.com'));
 
-  await request(app)
+  const removedLogin = await request(app)
     .post('/api/auth/login')
     .send({ email: 'partner@example.com', password: 'Partner123!' })
-    .expect(403);
+    .expect(200);
+  assert.equal(removedLogin.body.spaces.length, 1);
+  assert.equal(removedLogin.body.spaces[0].type, 'personal');
 
   const soloRegistration = await request(app)
     .post('/api/auth/register')
@@ -332,6 +397,46 @@ test('monthly spending plans are shared and track actual expenses', async () => 
   assert.equal(emptyPlan.body.spent, 0);
   assert.ok(emptyPlan.body.items.length > 0);
   assert.equal(emptyPlan.body.items.find((item) => item.category.id === food.id).id, null);
+});
+
+test('budget save scopes support recurring plans and monthly overrides', async () => {
+  const login = await request(app)
+    .post('/api/auth/login')
+    .send({ email: 'owner@example.com', password: 'MoneyMate123!' })
+    .expect(200);
+  const auth = { Authorization: `Bearer ${login.body.accessToken}` };
+  const categories = await request(app).get('/api/categories').set(auth).expect(200);
+  const transport = categories.body.find((category) => category.name === 'Giao thông' && category.type === 'expense');
+
+  await request(app)
+    .post('/api/budgets/batch')
+    .set(auth)
+    .send({ month: '2027-01', scope: 'future', items: [{ categoryId: transport.id, amount: 700000 }] })
+    .expect(200);
+
+  const recurringMonth = await request(app).get('/api/budgets?month=2027-04').set(auth).expect(200);
+  assert.equal(recurringMonth.body.items.find((item) => item.category.id === transport.id).amount, 700000);
+
+  await request(app)
+    .post('/api/budgets/batch')
+    .set(auth)
+    .send({ month: '2027-02', scope: 'month', items: [{ categoryId: transport.id, amount: 850000 }] })
+    .expect(200);
+
+  const overrideMonth = await request(app).get('/api/budgets?month=2027-02').set(auth).expect(200);
+  assert.equal(overrideMonth.body.items.find((item) => item.category.id === transport.id).amount, 850000);
+
+  const followingMonth = await request(app).get('/api/budgets?month=2027-03').set(auth).expect(200);
+  assert.equal(followingMonth.body.items.find((item) => item.category.id === transport.id).amount, 700000);
+
+  await request(app)
+    .post('/api/budgets/batch')
+    .set(auth)
+    .send({ month: '2027-05', scope: 'future', items: [{ categoryId: transport.id, amount: 0 }] })
+    .expect(200);
+
+  const stoppedMonth = await request(app).get('/api/budgets?month=2027-06').set(auth).expect(200);
+  assert.equal(stoppedMonth.body.items.find((item) => item.category.id === transport.id).amount, 0);
 });
 
 test('reports expose trends and a UTF-8 CSV export', async () => {

@@ -9,7 +9,7 @@ import { useToast } from './ToastContext.jsx';
 const FamilyContext = createContext(null);
 
 export function FamilyProvider({ children }) {
-  const { user } = useAuth();
+  const { user, family: activeSpace, activeSpaceId } = useAuth();
   const { notify } = useToast();
   const { pathname } = useLocation();
   const [familyDetails, setFamilyDetails] = useState(null);
@@ -30,23 +30,26 @@ export function FamilyProvider({ children }) {
   }, []);
 
   const reloadBaseData = useCallback(async () => {
-    if (!user) return;
+    if (!user || !activeSpaceId) return;
+    const requestedSpaceId = activeSpaceId;
     const [familyResponse, categoriesResponse] = await Promise.all([
-      api.get('/family'),
+      api.get(`/spaces/${requestedSpaceId}`),
       api.get('/categories'),
     ]);
+    if (requestedSpaceId !== activeSpaceId) return;
     setFamilyDetails(familyResponse.data);
     setCategories(categoriesResponse.data);
     clearPageCache();
     if (familyResponse.data.revisions) syncState.current = familyResponse.data.revisions;
     setLoading(false);
-  }, [user, clearPageCache]);
+  }, [user, activeSpaceId, clearPageCache]);
 
   const checkForChanges = useCallback(async () => {
     if (!user) return;
     if (syncRequest.current) return syncRequest.current;
 
-    const request = api.get('/family/sync').then(async ({ data }) => {
+    const request = api.get(`/spaces/${activeSpaceId}`).then(async ({ data }) => {
+      data = data.revisions;
       const previous = syncState.current;
       syncState.current = data;
       if (!previous) return;
@@ -64,10 +67,10 @@ export function FamilyProvider({ children }) {
     });
     syncRequest.current = request;
     return request;
-  }, [user, reloadBaseData, clearPageCache]);
+  }, [user, activeSpaceId, reloadBaseData, clearPageCache]);
 
   useEffect(() => {
-    if (!user) {
+    if (!user || !activeSpaceId) {
       setFamilyDetails(null);
       setCategories([]);
       syncState.current = null;
@@ -77,11 +80,16 @@ export function FamilyProvider({ children }) {
       return;
     }
     setLoading(true);
+    setFamilyDetails(null);
+    setCategories([]);
+    syncState.current = null;
+    pendingLocalTransactions.current = 0;
+    clearPageCache();
     reloadBaseData().catch((error) => {
       setLoading(false);
       notify(errorMessage(error), 'error');
     });
-  }, [user, reloadBaseData, notify, clearPageCache]);
+  }, [user, activeSpaceId, reloadBaseData, notify, clearPageCache]);
 
   useEffect(() => {
     if (!user || !syncState.current) return;
@@ -108,26 +116,31 @@ export function FamilyProvider({ children }) {
     if (!user) return undefined;
     const socketUrl = import.meta.env.VITE_SOCKET_URL
       || (window.location.hostname === 'localhost' ? 'http://localhost:4000' : null);
-    const syncChanged = () => checkForChanges().catch(() => {});
+    const syncChanged = (payload) => {
+      if (!payload?.spaceId || payload.spaceId === activeSpaceId) checkForChanges().catch(() => {});
+    };
     if (socketUrl) {
       const socket = io(socketUrl, { auth: { token: sessionStorage.getAccess() } });
       socket.on('transactions:changed', syncChanged);
       socket.on('categories:changed', syncChanged);
       socket.on('budgets:changed', syncChanged);
       socket.on('family:changed', syncChanged);
+      socket.on('space:changed', syncChanged);
       return () => socket.disconnect();
     }
 
     return undefined;
-  }, [user, checkForChanges]);
+  }, [user, activeSpaceId, checkForChanges]);
 
-  const getCache = useCallback((key) => pageCache.current.get(key), []);
-  const setCache = useCallback((key, value) => pageCache.current.set(key, value), []);
+  const scopedKey = useCallback((key) => `${activeSpaceId}:${key}`, [activeSpaceId]);
+  const getCache = useCallback((key) => pageCache.current.get(scopedKey(key)), [scopedKey]);
+  const setCache = useCallback((key, value) => pageCache.current.set(scopedKey(key), value), [scopedKey]);
   const loadCache = useCallback((key, loader) => {
-    const cached = pageCache.current.get(key);
+    const keyForSpace = scopedKey(key);
+    const cached = pageCache.current.get(keyForSpace);
     if (cached?.revision === revision) return Promise.resolve(cached);
 
-    const requestKey = `${revision}:${key}`;
+    const requestKey = `${revision}:${keyForSpace}`;
     const pending = pageRequests.current.get(requestKey);
     if (pending) return pending;
 
@@ -136,7 +149,7 @@ export function FamilyProvider({ children }) {
       .then(loader)
       .then((value) => {
         const entry = { ...value, revision };
-        if (cacheGeneration.current === generation) pageCache.current.set(key, entry);
+        if (cacheGeneration.current === generation) pageCache.current.set(keyForSpace, entry);
         return entry;
       })
       .finally(() => {
@@ -144,15 +157,15 @@ export function FamilyProvider({ children }) {
       });
     pageRequests.current.set(requestKey, request);
     return request;
-  }, [revision]);
+  }, [revision, scopedKey]);
   const touch = useCallback(() => {
     pendingLocalTransactions.current += 1;
     clearPageCache();
     setRevision((value) => value + 1);
   }, [clearPageCache]);
   const value = useMemo(
-    () => ({ familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache, loadCache }),
-    [familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache, loadCache],
+    () => ({ familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache, loadCache, activeSpace, isPersonal: activeSpace?.type === 'personal' }),
+    [familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache, loadCache, activeSpace],
   );
   return <FamilyContext.Provider value={value}>{children}</FamilyContext.Provider>;
 }

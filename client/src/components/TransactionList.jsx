@@ -6,7 +6,7 @@ import Avatar from './ui/Avatar.jsx';
 import CategoryIcon from './ui/CategoryIcon.jsx';
 import EmptyState from './ui/EmptyState.jsx';
 
-export default function TransactionList({ transactions, currency, onDelete, compact = false, groupByDate = false, showTime = false }) {
+export default function TransactionList({ transactions, currency, onDelete, compact = false, groupByDate = false, showTime = false, showMember = true }) {
   const [openRow, setOpenRow] = useState(null);
 
   useEffect(() => {
@@ -16,7 +16,7 @@ export default function TransactionList({ transactions, currency, onDelete, comp
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [openRow]);
 
-  if (!transactions.length) return <EmptyState title="Tháng này còn rất yên tĩnh" description="Thêm giao dịch đầu tiên để bắt đầu theo dõi dòng tiền của nhà mình." />;
+  if (!transactions.length) return <EmptyState title="Tháng này còn rất yên tĩnh" description="Thêm giao dịch đầu tiên để bắt đầu theo dõi dòng tiền." />;
 
   const groups = groupByDate
     ? groupTransactionsByDate(transactions)
@@ -27,7 +27,7 @@ export default function TransactionList({ transactions, currency, onDelete, comp
       {groups.map((group) => (
         <section key={group.date || 'all'}>
           {group.date && <TransactionDayHeader date={group.date} transactions={group.transactions} currency={currency} />}
-          <div className="divide-y divide-ink/[0.06]">
+          <div>
             {group.transactions.map((transaction) => (
               <TransactionRow
                 key={transaction.id}
@@ -35,6 +35,7 @@ export default function TransactionList({ transactions, currency, onDelete, comp
                 currency={currency}
                 compact={compact}
                 showTime={showTime}
+                showMember={showMember}
                 onDelete={onDelete}
                 open={openRow === transaction.id}
                 onOpen={() => setOpenRow(transaction.id)}
@@ -48,7 +49,7 @@ export default function TransactionList({ transactions, currency, onDelete, comp
   );
 }
 
-function TransactionRow({ transaction, currency, compact, showTime, onDelete, open, onOpen, onClose }) {
+function TransactionRow({ transaction, currency, compact, showTime, showMember, onDelete, open, onOpen, onClose }) {
   const actionWidth = onDelete ? 128 : 64;
   const gesture = useRef(null);
   const [dragging, setDragging] = useState(false);
@@ -107,8 +108,15 @@ function TransactionRow({ transaction, currency, compact, showTime, onDelete, op
   };
 
   return (
-    <div className="relative overflow-hidden" data-swipe-row>
-      <div className="absolute inset-y-0 right-0 flex w-[129px]" aria-hidden={!open && !dragging}>
+    <div className="relative overflow-hidden border-b border-ink/[0.06] bg-paper last:border-b-0" data-swipe-row>
+      <div
+        className={`absolute bottom-px right-[-2px] top-px flex overflow-hidden ${dragging ? '' : 'transition-[clip-path] duration-300 ease-out'}`}
+        style={{
+          width: `${actionWidth + 2}px`,
+          clipPath: `inset(0 0 0 ${Math.max(0, actionWidth + offset)}px)`,
+        }}
+        aria-hidden={!open && !dragging}
+      >
         <Link
           to={`/transactions/${transaction.id}/edit`}
           className="flex w-16 flex-col items-center justify-center gap-1 bg-forest text-[10px] font-medium text-white transition hover:bg-[#255c50]"
@@ -134,8 +142,12 @@ function TransactionRow({ transaction, currency, compact, showTime, onDelete, op
       </div>
 
       <article
-        className={`relative flex touch-pan-y select-none items-center gap-2.5 bg-paper focus:outline-none focus-visible:outline-none ${dragging ? '' : 'transition-transform duration-300 ease-out'} ${compact ? 'py-3' : 'py-3.5'}`}
-        style={{ transform: `translate3d(${offset}px, 0, 0)` }}
+        className={`relative z-10 flex w-[calc(100%+2px)] touch-pan-y select-none items-center gap-2.5 bg-paper outline-none focus:outline-none focus-visible:outline-none ${dragging ? '' : 'transition-transform duration-300 ease-out'} ${compact ? 'py-3' : 'py-3.5'}`}
+        style={{
+          transform: `translateX(${offset}px)`,
+          willChange: 'transform',
+          backfaceVisibility: 'hidden',
+        }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={finishGesture}
@@ -156,16 +168,12 @@ function TransactionRow({ transaction, currency, compact, showTime, onDelete, op
           {showTime ? (
             <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-normal leading-4 text-ink/42" title={transaction.assignedTo.displayName}>
               <span className="shrink-0">{formatTransactionTime(transaction.createdAt)}</span>
-              <span className="size-0.5 shrink-0 rounded-full bg-ink/25" />
-              <Avatar user={transaction.assignedTo} size="xs" />
-              <span className="truncate">{shortDisplayName(transaction.assignedTo.displayName)}</span>
+              {showMember && <><span className="size-0.5 shrink-0 rounded-full bg-ink/25" /><Avatar user={transaction.assignedTo} size="xs" /><span className="truncate">{shortDisplayName(transaction.assignedTo.displayName)}</span></>}
             </div>
           ) : (
             <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-semibold text-ink/40" title={transaction.assignedTo.displayName}>
               <span className="shrink-0">{formatShortDate(transaction.transactionDate)}</span>
-              <span className="size-0.5 shrink-0 rounded-full bg-ink/25" />
-              <Avatar user={transaction.assignedTo} size="xs" />
-              <span className="truncate">{transaction.assignedTo.displayName}</span>
+              {showMember && <><span className="size-0.5 shrink-0 rounded-full bg-ink/25" /><Avatar user={transaction.assignedTo} size="xs" /><span className="truncate">{transaction.assignedTo.displayName}</span></>}
             </div>
           )}
         </div>
@@ -188,7 +196,7 @@ function TransactionDayHeader({ date, transactions, currency }) {
   const dateLabel = day.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   return (
-    <div className="-mx-4 flex items-center justify-between gap-4 border-y border-ink/[0.06] bg-ink/[0.035] px-4 py-2 text-xs font-medium text-ink/58 sm:-mx-6 sm:px-6">
+    <div className="-mx-3.5 flex items-center justify-between gap-4 border-y border-ink/[0.06] bg-ink/[0.035] px-3.5 py-2 text-xs font-medium text-ink/58 sm:-mx-5 sm:px-5">
       <span>{dateLabel} ({weekDays[day.getDay()]})</span>
       <span className={dailyTotal >= 0 ? 'text-[#258C68]' : 'text-coral'}>{dailyTotal > 0 ? '+' : dailyTotal < 0 ? '−' : ''}{formatMoney(Math.abs(dailyTotal), currency)}</span>
     </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BarChart3, Download, Filter, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
+import { BarChart3, Filter, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import Skeleton, { ChartSkeleton, TransactionListSkeleton } from '../components/ui/Skeleton.jsx';
@@ -13,7 +13,7 @@ import { currentMonth, formatMoney } from '../utils/formatters.js';
 
 export default function Reports() {
   const { family } = useAuth();
-  const { categories, familyDetails, touch, loading: baseLoading, loadCache } = useFamilyData();
+  const { categories, familyDetails, touch, loading: baseLoading, loadCache, isPersonal } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
   const [type, setType] = useState('expense');
@@ -58,21 +58,13 @@ export default function Reports() {
     catch (error) { notify(errorMessage(error), 'error'); }
     finally { setDeleting(false); }
   };
-  const exportCsv = async () => {
-    try {
-      const response = await api.get('/reports/export', { params: { month }, responseType: 'blob' });
-      const url = URL.createObjectURL(response.data);
-      const link = document.createElement('a'); link.href = url; link.download = `moneymate-${month}.csv`; link.click(); URL.revokeObjectURL(url);
-      notify('Đã xuất báo cáo CSV.');
-    } catch (error) { notify(errorMessage(error), 'error'); }
-  };
-
   return (
     <div className="space-y-5 sm:space-y-6">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div><p className="mb-1.5 text-[10px] font-extrabold uppercase tracking-[0.16em] text-coral">Nhìn lại để đi xa hơn</p><h1 className="font-editorial text-[28px] font-semibold tracking-[-0.03em] text-ink sm:text-4xl">Báo cáo dòng tiền.</h1></div>
-        <div className="flex flex-col gap-3 sm:flex-row"><MonthPicker value={month} onChange={setMonth} compact /><button className="secondary-button" onClick={exportCsv}><Download className="size-4" /> Xuất CSV</button></div>
-      </div>
+      <header className="text-center">
+        <h1 className="font-editorial text-[21px] font-semibold tracking-[-0.025em] text-ink sm:text-2xl">Báo cáo</h1>
+      </header>
+
+      <MonthPicker value={month} onChange={setMonth} dense fullWidth variant="budget" />
 
       <section className="grid gap-3 sm:grid-cols-3">
         <ReportMetric title="Thu nhập" value={data.summary?.income} currency={family.currency} icon={TrendingUp} color="text-[#2D8A72] bg-mint" loading={contentLoading} />
@@ -102,9 +94,9 @@ export default function Reports() {
       <section className="rounded-[18px] border border-ink/[0.06] bg-paper/85 p-4 shadow-card sm:p-5">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div><p className="mb-2 text-xs font-extrabold uppercase tracking-[0.15em] text-ink/35">Chi tiết</p><h2 className="section-title">Tất cả giao dịch</h2></div>
-          {baseLoading ? <div className="grid gap-2 sm:grid-cols-2"><Skeleton className="h-12 w-44 rounded-2xl" /><Skeleton className="h-12 w-44 rounded-2xl" /></div> : <div className="grid gap-2 sm:grid-cols-2 lg:flex"><label className="relative"><Filter className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink/35" /><select className="field min-w-44 pl-9 text-sm" value={memberId} onChange={(e) => setMemberId(e.target.value)}><option value="">Cả hai thành viên</option>{familyDetails?.members.map((member) => <option value={member.id} key={member.id}>{member.displayName}</option>)}</select></label><select className="field min-w-44 text-sm" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}><option value="">Mọi danh mục</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name} ({category.type === 'expense' ? 'Chi' : 'Thu'})</option>)}</select></div>}
+          {baseLoading ? <div className="grid gap-2 sm:grid-cols-2"><Skeleton className="h-12 w-44 rounded-2xl" /><Skeleton className="h-12 w-44 rounded-2xl" /></div> : <div className="grid gap-2 sm:grid-cols-2 lg:flex">{!isPersonal && <label className="relative"><Filter className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink/35" /><select className="field min-w-44 pl-9 text-sm" value={memberId} onChange={(e) => setMemberId(e.target.value)}><option value="">Mọi thành viên</option>{familyDetails?.members.map((member) => <option value={member.id} key={member.id}>{member.displayName}</option>)}</select></label>}<select className="field min-w-44 text-sm" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}><option value="">Mọi danh mục</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name} ({category.type === 'expense' ? 'Chi' : 'Thu'})</option>)}</select></div>}
         </div>
-        <div className="mt-4">{contentLoading ? <TransactionListSkeleton rows={5} /> : <TransactionList transactions={data.transactions} currency={family.currency} onDelete={setDeleteTarget} />}</div>
+        <div className="mt-4">{contentLoading ? <TransactionListSkeleton rows={5} /> : <TransactionList transactions={data.transactions} currency={family.currency} onDelete={setDeleteTarget} showMember={!isPersonal} />}</div>
       </section>
 
       <ConfirmModal

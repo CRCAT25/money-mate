@@ -24,7 +24,9 @@ function ProtectedRoute() {
   return (
     <FamilyProvider>
       <AppShell>
-        <Outlet />
+        <Suspense fallback={<PageLoadingScreen />}>
+          <Outlet />
+        </Suspense>
       </AppShell>
     </FamilyProvider>
   );
@@ -45,11 +47,27 @@ function LoadingScreen() {
         <div className="grid gap-4 sm:grid-cols-3">{Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="h-24 rounded-[24px]" />)}</div>
         <div className="grid gap-6 sm:grid-cols-2"><Skeleton className="h-72 rounded-[30px]" /><Skeleton className="h-72 rounded-[30px]" /></div>
       </main>
-      <nav className="fixed inset-x-0 bottom-0 px-3 pb-[calc(6px+env(safe-area-inset-bottom))] lg:hidden">
-        <div className="grid h-[62px] grid-cols-5 items-center rounded-[22px] border border-white/70 bg-[linear-gradient(115deg,rgba(232,242,237,0.94),rgba(255,254,251,0.92)_52%,rgba(252,239,233,0.92))] px-1.5 shadow-[0_10px_32px_rgba(32,49,44,0.14)] backdrop-blur-2xl">
-          {Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className={`mx-auto ${index === 2 ? '-mt-5 size-[50px] rounded-[17px]' : 'size-8 rounded-[11px]'}`} />)}
+      <nav className="fixed inset-x-0 bottom-0 px-2.5 pb-[calc(7px+env(safe-area-inset-bottom))] lg:hidden">
+        <div className="grid h-[68px] grid-cols-5 items-center rounded-[23px] border border-white/70 bg-[linear-gradient(115deg,rgba(232,242,237,0.94),rgba(255,254,251,0.92)_52%,rgba(252,239,233,0.92))] px-1 shadow-[0_10px_32px_rgba(32,49,44,0.14)] backdrop-blur-2xl">
+          {Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className={`mx-auto ${index === 2 ? '-mt-4 size-[54px] rounded-[18px]' : 'size-9 rounded-[12px]'}`} />)}
         </div>
       </nav>
+    </div>
+  );
+}
+
+function PageLoadingScreen() {
+  return (
+    <div aria-label="Đang tải nội dung" className="space-y-5" role="status">
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-28" />
+        <Skeleton className="h-9 w-52 max-w-full rounded-xl" />
+      </div>
+      <Skeleton className="h-36 w-full rounded-[22px]" />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Skeleton className="h-28 rounded-[18px]" />
+        <Skeleton className="h-28 rounded-[18px]" />
+      </div>
     </div>
   );
 }

@@ -138,6 +138,8 @@ async function migrate(db) {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       invite_code TEXT NOT NULL UNIQUE,
+      space_type TEXT NOT NULL DEFAULT 'family' CHECK(space_type IN ('family', 'personal')),
+      owner_user_id TEXT,
       currency TEXT NOT NULL DEFAULT 'VND',
       language TEXT NOT NULL DEFAULT 'vi',
       base_revision INTEGER NOT NULL DEFAULT 0,
@@ -211,6 +213,36 @@ async function migrate(db) {
       FOREIGN KEY (created_by) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS budget_month_overrides (
+      id TEXT PRIMARY KEY,
+      family_id TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      month TEXT NOT NULL,
+      amount ${amountType} NOT NULL CHECK(amount >= 0),
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(family_id, category_id, month),
+      FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS budget_rules (
+      id TEXT PRIMARY KEY,
+      family_id TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      effective_from TEXT NOT NULL,
+      amount ${amountType} NOT NULL CHECK(amount >= 0),
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(family_id, category_id, effective_from),
+      FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    );
+
     CREATE TABLE IF NOT EXISTS refresh_tokens (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -235,14 +267,22 @@ async function migrate(db) {
       ON transactions(family_id, transaction_date DESC);
     CREATE INDEX IF NOT EXISTS idx_categories_family ON categories(family_id);
     CREATE INDEX IF NOT EXISTS idx_budgets_family_month ON budgets(family_id, month);
+    CREATE INDEX IF NOT EXISTS idx_budget_overrides_family_month
+      ON budget_month_overrides(family_id, month);
+    CREATE INDEX IF NOT EXISTS idx_budget_rules_family_effective
+      ON budget_rules(family_id, effective_from);
   `);
-  await ensureFamilyRevisionColumns(db);
+  await ensureFamilyColumns(db);
+  await backfillPersonalSpaces(db);
 }
 
-async function ensureFamilyRevisionColumns(db) {
+async function ensureFamilyColumns(db) {
   if (db.kind === 'postgres') {
     await db.sql.unsafe('ALTER TABLE families ADD COLUMN IF NOT EXISTS base_revision INTEGER NOT NULL DEFAULT 0');
     await db.sql.unsafe('ALTER TABLE families ADD COLUMN IF NOT EXISTS transactions_revision INTEGER NOT NULL DEFAULT 0');
+    await db.sql.unsafe("ALTER TABLE families ADD COLUMN IF NOT EXISTS space_type TEXT NOT NULL DEFAULT 'family'");
+    await db.sql.unsafe('ALTER TABLE families ADD COLUMN IF NOT EXISTS owner_user_id TEXT');
+    await db.sql.unsafe("CREATE UNIQUE INDEX IF NOT EXISTS idx_families_personal_owner ON families(owner_user_id) WHERE space_type = 'personal'");
     return;
   }
 
@@ -254,4 +294,17 @@ async function ensureFamilyRevisionColumns(db) {
   if (!names.has('transactions_revision')) {
     db.sqlite.exec('ALTER TABLE families ADD COLUMN transactions_revision INTEGER NOT NULL DEFAULT 0');
   }
+  if (!names.has('space_type')) {
+    db.sqlite.exec("ALTER TABLE families ADD COLUMN space_type TEXT NOT NULL DEFAULT 'family'");
+  }
+  if (!names.has('owner_user_id')) {
+    db.sqlite.exec('ALTER TABLE families ADD COLUMN owner_user_id TEXT');
+  }
+  db.sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_families_personal_owner ON families(owner_user_id) WHERE space_type = 'personal'");
+}
+
+async function backfillPersonalSpaces(db) {
+  const { ensurePersonalSpace } = await import('./spaces.js');
+  const users = await db.prepare('SELECT id FROM users').all();
+  for (const user of users) await ensurePersonalSpace(db, user.id);
 }

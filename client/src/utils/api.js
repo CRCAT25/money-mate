@@ -1,6 +1,12 @@
 import axios from 'axios';
 import { sessionStorage } from './storage.js';
 
+let activeSpaceId;
+
+export function setApiSpace(spaceId) {
+  activeSpaceId = spaceId || null;
+}
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : '/api'),
   timeout: 12000,
@@ -9,6 +15,7 @@ const api = axios.create({
 api.interceptors.request.use((request) => {
   const token = sessionStorage.getAccess();
   if (token) request.headers.Authorization = `Bearer ${token}`;
+  if (activeSpaceId) request.headers['X-MoneyMate-Space-Id'] = activeSpaceId;
   return request;
 });
 
@@ -16,7 +23,7 @@ let refreshPromise;
 
 function announceApiActivity(config) {
   const url = config?.url || '';
-  if (url.includes('/family/sync') || url.includes('/auth/')) return;
+  if (url.includes('/family/sync') || url.includes('/spaces/') || url.includes('/auth/')) return;
   window.dispatchEvent(new Event('moneymate:api-activity'));
 }
 

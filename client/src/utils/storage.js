@@ -1,5 +1,6 @@
 const ACCESS_KEY = 'moneymate.accessToken';
 const REFRESH_KEY = 'moneymate.refreshToken';
+const SPACE_KEY_PREFIX = 'moneymate.space.';
 
 export const sessionStorage = {
   getAccess: () => localStorage.getItem(ACCESS_KEY),
@@ -14,3 +15,9 @@ export const sessionStorage = {
   },
 };
 
+export const spaceStorage = {
+  get: (userId) => userId ? localStorage.getItem(`${SPACE_KEY_PREFIX}${userId}`) : null,
+  set(userId, spaceId) {
+    if (userId && spaceId) localStorage.setItem(`${SPACE_KEY_PREFIX}${userId}`, spaceId);
+  },
+};

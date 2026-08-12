@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowRight, CalendarDays } from 'lucide-react';
+import { CalendarDays } from 'lucide-react';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import Skeleton, { TransactionListSkeleton } from '../components/ui/Skeleton.jsx';
 import TransactionList from '../components/TransactionList.jsx';
@@ -15,7 +14,7 @@ const weekDays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
 export default function Home() {
   const { family } = useAuth();
-  const { touch, loadCache, loading: baseLoading } = useFamilyData();
+  const { touch, loadCache, loading: baseLoading, isPersonal } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
   const [summary, setSummary] = useState(null);
@@ -91,7 +90,7 @@ export default function Home() {
 
   return (
     <div className="space-y-4 sm:space-y-5">
-      <div className="fixed inset-x-0 top-[env(safe-area-inset-top)] z-30 flex h-12 items-center justify-center bg-cream/90 px-4 backdrop-blur-xl sm:px-7 lg:static lg:h-auto lg:bg-transparent lg:px-0 lg:backdrop-blur-none">
+      <div className="fixed inset-x-0 top-[env(safe-area-inset-top)] z-30 flex h-12 items-center bg-cream/90 px-4 backdrop-blur-xl sm:px-7 lg:static lg:h-auto lg:bg-transparent lg:px-0 lg:backdrop-blur-none">
         <MonthPicker value={month} onChange={setMonth} dense fullWidth variant="budget" />
       </div>
 
@@ -109,15 +108,14 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="rounded-[18px] border border-ink/[0.06] bg-paper/90 p-3.5 shadow-card sm:p-5">
-        <div className="mb-2 flex items-center justify-between">
+      <section className="overflow-hidden rounded-[18px] border border-ink/[0.06] bg-paper/90 p-3.5 shadow-card sm:p-5">
+        <div className="mb-2 flex items-center">
           <div className="flex items-center gap-2">
             <CalendarDays className="size-5 text-forest" />
             <h2 className="whitespace-nowrap text-base font-bold tracking-[-0.02em] text-ink sm:text-xl">Giao dịch gần đây</h2>
           </div>
-          <Link to="/reports" className="flex min-h-10 shrink-0 items-center gap-1 whitespace-nowrap text-xs font-extrabold text-forest sm:text-sm">Xem tất cả <ArrowRight className="size-4" /></Link>
         </div>
-        {loading ? <TransactionListSkeleton compact /> : <TransactionList transactions={transactions.slice(0, 10)} currency={family.currency} onDelete={setDeleteTarget} compact groupByDate showTime />}
+        {loading ? <TransactionListSkeleton compact /> : <TransactionList transactions={transactions.slice(0, 10)} currency={family.currency} onDelete={setDeleteTarget} compact groupByDate showTime showMember={!isPersonal} />}
       </section>
 
       <ConfirmModal

@@ -5,6 +5,5 @@ export function setIo(instance) {
 }
 
 export function emitFamily(familyId, event, payload = {}) {
-  io?.to(`family:${familyId}`).emit(event, payload);
+  io?.to(`space:${familyId}`).emit(event, { ...payload, spaceId: familyId });
 }
-

@@ -6,9 +6,11 @@ import { emitFamily } from '../realtime.js';
 import { bumpFamilyRevision } from '../revisions.js';
 import { id, monthRange } from '../utils.js';
 import { validate } from '../validation.js';
+import { resolveSpace } from '../spaces.js';
 
 const router = express.Router();
 router.use(authenticate);
+router.use(resolveSpace);
 
 const transactionRules = [
   body('type').isIn(['expense', 'income']).withMessage('Loại giao dịch không hợp lệ.'),
@@ -29,7 +31,7 @@ router.get(
   validate,
   async (req, res) => {
     const where = ['t.family_id = ?'];
-    const params = [req.user.familyId];
+    const params = [req.space.id];
     if (req.query.month) {
       const range = monthRange(req.query.month);
       where.push('t.transaction_date >= ? AND t.transaction_date < ?');
@@ -67,14 +69,14 @@ router.get('/:id', [param('id').isUUID()], validate, async (req, res) => {
     JOIN categories c ON c.id = t.category_id
     JOIN users u ON u.id = t.assigned_to
     WHERE t.id = ? AND t.family_id = ?
-  `).get(req.params.id, req.user.familyId);
+  `).get(req.params.id, req.space.id);
   if (!transaction) return res.status(404).json({ message: 'Không tìm thấy giao dịch.' });
   res.json(mapTransaction(transaction));
 });
 
 router.post('/', transactionRules, validate, async (req, res) => {
   const db = getDb();
-  const check = await validateRelations(db, req.user.familyId, req.body);
+  const check = await validateRelations(db, req.space.id, req.body);
   if (check) return res.status(check.status).json({ message: check.message });
 
   const transactionId = id();
@@ -84,7 +86,7 @@ router.post('/', transactionRules, validate, async (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     transactionId,
-    req.user.familyId,
+    req.space.id,
     req.body.categoryId,
     req.user.id,
     req.user.id,
@@ -93,14 +95,14 @@ router.post('/', transactionRules, validate, async (req, res) => {
     req.body.transactionDate.slice(0, 10),
     req.body.note?.trim() || null,
   );
-  await bumpFamilyRevision(db, req.user.familyId, { transactions: true });
-  emitFamily(req.user.familyId, 'transactions:changed', { action: 'created', id: transactionId });
+  await bumpFamilyRevision(db, req.space.id, { transactions: true });
+  emitFamily(req.space.id, 'transactions:changed', { action: 'created', id: transactionId });
   res.status(201).json({ id: transactionId, message: 'Đã lưu giao dịch.' });
 });
 
 router.patch('/:id', [param('id').isUUID(), ...transactionRules], validate, async (req, res) => {
   const db = getDb();
-  const check = await validateRelations(db, req.user.familyId, req.body);
+  const check = await validateRelations(db, req.space.id, req.body);
   if (check) return res.status(check.status).json({ message: check.message });
 
   const result = await db.prepare(`
@@ -115,21 +117,21 @@ router.patch('/:id', [param('id').isUUID(), ...transactionRules], validate, asyn
     req.body.transactionDate.slice(0, 10),
     req.body.note?.trim() || null,
     req.params.id,
-    req.user.familyId,
+    req.space.id,
   );
   if (!result.changes) return res.status(404).json({ message: 'Không tìm thấy giao dịch.' });
-  await bumpFamilyRevision(db, req.user.familyId, { transactions: true });
-  emitFamily(req.user.familyId, 'transactions:changed', { action: 'updated', id: req.params.id });
+  await bumpFamilyRevision(db, req.space.id, { transactions: true });
+  emitFamily(req.space.id, 'transactions:changed', { action: 'updated', id: req.params.id });
   res.json({ message: 'Đã cập nhật giao dịch.' });
 });
 
 router.delete('/:id', [param('id').isUUID()], validate, async (req, res) => {
   const db = getDb();
   const result = await db.prepare('DELETE FROM transactions WHERE id = ? AND family_id = ?')
-    .run(req.params.id, req.user.familyId);
+    .run(req.params.id, req.space.id);
   if (!result.changes) return res.status(404).json({ message: 'Không tìm thấy giao dịch.' });
-  await bumpFamilyRevision(db, req.user.familyId, { transactions: true });
-  emitFamily(req.user.familyId, 'transactions:changed', { action: 'deleted', id: req.params.id });
+  await bumpFamilyRevision(db, req.space.id, { transactions: true });
+  emitFamily(req.space.id, 'transactions:changed', { action: 'deleted', id: req.params.id });
   res.status(204).end();
 });
 

@@ -1,12 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import api from '../utils/api.js';
-import { sessionStorage } from '../utils/storage.js';
+import api, { setApiSpace } from '../utils/api.js';
+import { sessionStorage, spaceStorage } from '../utils/storage.js';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [family, setFamily] = useState(null);
+  const [spaces, setSpaces] = useState([]);
+  const [activeSpaceId, setActiveSpaceIdState] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(async () => {
@@ -17,11 +19,22 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await api.get('/auth/me');
       setUser(data.user);
-      setFamily(data.family);
+      setSpaces(data.spaces || []);
+      const selectedId = spaceStorage.get(data.user.id);
+      const nextSpace = data.spaces?.find((space) => space.id === selectedId)
+        || data.spaces?.find((space) => space.id === data.defaultSpaceId)
+        || data.spaces?.[0]
+        || null;
+      setActiveSpaceIdState(nextSpace?.id || null);
+      setApiSpace(nextSpace?.id);
+      setFamily(nextSpace);
     } catch {
       sessionStorage.clear();
       setUser(null);
       setFamily(null);
+      setSpaces([]);
+      setActiveSpaceIdState(null);
+      setApiSpace(null);
     } finally {
       setLoading(false);
     }
@@ -32,6 +45,9 @@ export function AuthProvider({ children }) {
     const expire = () => {
       setUser(null);
       setFamily(null);
+      setSpaces([]);
+      setActiveSpaceIdState(null);
+      setApiSpace(null);
     };
     window.addEventListener('moneymate:session-expired', expire);
     return () => window.removeEventListener('moneymate:session-expired', expire);
@@ -41,7 +57,15 @@ export function AuthProvider({ children }) {
     const { data } = await api.post('/auth/login', credentials);
     sessionStorage.set(data);
     setUser(data.user);
-    setFamily(data.family);
+    setSpaces(data.spaces || []);
+    const selectedId = spaceStorage.get(data.user.id);
+    const nextSpace = data.spaces?.find((space) => space.id === selectedId)
+      || data.spaces?.find((space) => space.id === data.defaultSpaceId)
+      || data.spaces?.[0]
+      || null;
+    setActiveSpaceIdState(nextSpace?.id || null);
+    setApiSpace(nextSpace?.id);
+    setFamily(nextSpace);
     return data;
   }, []);
 
@@ -55,14 +79,25 @@ export function AuthProvider({ children }) {
     sessionStorage.clear();
     setUser(null);
     setFamily(null);
+    setSpaces([]);
+    setActiveSpaceIdState(null);
+    setApiSpace(null);
   }, []);
 
+  const selectSpace = useCallback((spaceId) => {
+    const nextSpace = spaces.find((space) => space.id === spaceId);
+    if (!nextSpace || !user) return;
+    spaceStorage.set(user.id, nextSpace.id);
+    setApiSpace(nextSpace.id);
+    setActiveSpaceIdState(nextSpace.id);
+    setFamily(nextSpace);
+  }, [spaces, user]);
+
   const value = useMemo(
-    () => ({ user, family, loading, login, logout, refreshProfile: loadProfile, setFamily, setUser }),
-    [user, family, loading, login, logout, loadProfile],
+    () => ({ user, family, spaces, activeSpaceId, loading, login, logout, refreshProfile: loadProfile, selectSpace, setFamily, setUser }),
+    [user, family, spaces, activeSpaceId, loading, login, logout, loadProfile, selectSpace],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => useContext(AuthContext);
-

@@ -8,6 +8,7 @@ import { emitFamily } from '../realtime.js';
 import { bumpFamilyRevision } from '../revisions.js';
 import { addDays, hashToken, id, randomToken } from '../utils.js';
 import { validate } from '../validation.js';
+import { listUserSpaces } from '../spaces.js';
 
 const router = express.Router();
 router.use(authenticate);
@@ -59,8 +60,11 @@ router.patch(
         console.info(`[MoneyMate] Verify ${req.body.email}: ${previewVerificationUrl}`);
       }
     });
-    await bumpFamilyRevision(db, req.user.familyId, { base: true, transactions: true });
-    emitFamily(req.user.familyId, 'family:changed');
+    const spaces = await listUserSpaces(db, req.user.id);
+    await Promise.all(spaces.map(async (space) => {
+      await bumpFamilyRevision(db, space.id, { base: true, transactions: true });
+      emitFamily(space.id, 'space:changed');
+    }));
     res.json({
       message: emailChanged ? 'Đã cập nhật hồ sơ. Hãy xác nhận email mới.' : 'Đã cập nhật hồ sơ.',
       previewVerificationUrl: config.previewAuthLinks ? previewVerificationUrl : undefined,
@@ -93,18 +97,20 @@ router.patch(
 router.delete('/me', async (req, res) => {
   const db = getDb();
   const member = await db.prepare('SELECT role, family_id FROM family_members WHERE user_id = ?').get(req.user.id);
-  if (member.role === 'owner') {
+  if (member?.role === 'owner') {
     const count = await db.prepare('SELECT COUNT(*) AS count FROM family_members WHERE family_id = ?').get(member.family_id);
     if (Number(count.count) > 1) {
       return res.status(409).json({ message: 'Hãy xóa thành viên còn lại trước khi xóa tài khoản chủ gia đình.' });
     }
     await db.transaction(async (transaction) => {
       await transaction.prepare('DELETE FROM families WHERE id = ?').run(member.family_id);
+      await transaction.prepare("DELETE FROM families WHERE space_type = 'personal' AND owner_user_id = ?").run(req.user.id);
       await transaction.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
     });
-  } else {
+  } else if (member) {
     await db.transaction(async (transaction) => {
       await transaction.prepare('DELETE FROM family_members WHERE user_id = ?').run(req.user.id);
+      await transaction.prepare("DELETE FROM families WHERE space_type = 'personal' AND owner_user_id = ?").run(req.user.id);
       await transaction.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(req.user.id);
       await transaction.prepare('DELETE FROM action_tokens WHERE user_id = ?').run(req.user.id);
       await transaction.prepare(`
@@ -112,6 +118,11 @@ router.delete('/me', async (req, res) => {
           email_verified = 0
         WHERE id = ?
       `).run(`deleted-${req.user.id}@moneymate.local`, req.user.id);
+    });
+  } else {
+    await db.transaction(async (transaction) => {
+      await transaction.prepare("DELETE FROM families WHERE space_type = 'personal' AND owner_user_id = ?").run(req.user.id);
+      await transaction.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
     });
   }
   res.status(204).end();

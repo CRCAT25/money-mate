@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, LoaderCircle, Pencil, ReceiptText } from 'lucide-react';
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Grid2X2, LoaderCircle } from 'lucide-react';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
 import Skeleton from '../components/ui/Skeleton.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -84,9 +84,7 @@ export default function TransactionForm() {
             <TypeButton active={form.type === 'expense'} onClick={() => changeType('expense')} label="Tiền chi" />
             <TypeButton active={form.type === 'income'} onClick={() => changeType('income')} label="Tiền thu" />
           </div>
-          <span className="grid size-9 place-items-center rounded-full bg-white/70 text-ink/40 shadow-sm" aria-hidden="true">
-            {transactionId ? <Pencil className="size-[17px]" /> : <ReceiptText className="size-[17px]" />}
-          </span>
+          <span />
         </header>
 
         <form onSubmit={submit} className="pb-[calc(128px+env(safe-area-inset-bottom))] lg:pb-0">
@@ -112,11 +110,11 @@ export default function TransactionForm() {
               <input className="min-h-10 min-w-0 bg-transparent px-2 text-[13px] font-normal text-ink outline-none placeholder:text-ink/25 sm:text-sm" maxLength="240" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="Chưa nhập" />
             </label>
 
-            <label className="grid min-h-[62px] grid-cols-[70px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[112px_minmax(0,1fr)]">
+            <label className="grid min-h-[56px] grid-cols-[70px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[112px_minmax(0,1fr)]">
               <span className="text-[13px] font-medium text-ink/68 sm:text-sm">{form.type === 'expense' ? 'Tiền chi' : 'Tiền thu'}</span>
-              <span className="flex min-w-0 items-center gap-2.5">
+              <span className="flex min-w-0 items-center gap-2">
                 <input
-                  className="min-h-11 min-w-0 flex-1 rounded-[10px] bg-sun/15 px-3 text-[22px] font-normal tracking-[-0.025em] text-ink outline-none placeholder:text-ink/30 sm:text-2xl"
+                  className="h-9 min-w-0 flex-1 rounded-[9px] bg-sun/12 px-2.5 text-[18px] font-normal tracking-[-0.02em] text-ink outline-none placeholder:text-ink/28 sm:h-10 sm:text-xl"
                   type="text"
                   inputMode="numeric"
                   value={formatInputAmount(form.amount)}
@@ -126,15 +124,25 @@ export default function TransactionForm() {
                   required
                   aria-label={form.type === 'expense' ? 'Tiền chi' : 'Tiền thu'}
                 />
-                <span className="shrink-0 text-base font-normal text-ink/50">{currencySymbol(family.currency)}</span>
+                <span className="shrink-0 text-sm font-normal text-ink/48">{currencySymbol(family.currency)}</span>
               </span>
             </label>
           </div>
 
           <div className="px-4 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-5">
-            <div className="mb-3">
-              <p className="text-[15px] font-semibold text-ink">Danh mục</p>
-              <p className="mt-0.5 text-[10px] font-normal text-ink/38">Chọn mục phù hợp với giao dịch</p>
+            <div className="mb-3 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[15px] font-semibold text-ink">Danh mục</p>
+                <p className="mt-0.5 text-[10px] font-normal text-ink/38">Chọn mục phù hợp với giao dịch</p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-[10px] bg-mint/70 px-2.5 text-[11px] font-medium text-forest transition active:scale-[0.97] hover:bg-mint"
+                onClick={() => navigate('/categories')}
+              >
+                <Grid2X2 className="size-3.5" />
+                Quản lý
+              </button>
             </div>
 
             <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5 lg:grid-cols-6">
@@ -145,7 +153,7 @@ export default function TransactionForm() {
                     key={category.id}
                     type="button"
                     onClick={() => setForm({ ...form, categoryId: category.id })}
-                    className={`relative flex min-h-[64px] min-w-0 flex-col items-center justify-center gap-1 rounded-[10px] border px-1 py-1.5 text-[10px] font-medium transition active:scale-[0.98] ${active ? 'border-coral/45 bg-coral/[0.07] text-ink shadow-sm' : 'border-ink/[0.08] bg-white/45 text-ink/55 hover:border-ink/15 hover:bg-white'}`}
+                    className={`relative flex min-h-[64px] min-w-0 flex-col items-center justify-center gap-1 rounded-[10px] border px-1 py-1.5 text-[10px] font-medium text-ink transition active:scale-[0.98] ${active ? 'border-coral/45 bg-coral/[0.07] shadow-sm' : 'border-ink/[0.08] bg-white/45 hover:border-ink/15 hover:bg-white'}`}
                   >
                     {active && <span className="absolute right-1.5 top-1.5 grid size-3.5 place-items-center rounded-full bg-ink text-white"><Check className="size-2.5" strokeWidth={3} /></span>}
                     <span className="grid size-7 place-items-center rounded-lg" style={{ backgroundColor: `${category.color}14`, color: category.color }}>

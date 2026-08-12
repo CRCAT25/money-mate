@@ -5,6 +5,7 @@ import { createApp } from './app.js';
 import { config } from './config.js';
 import { getDb } from './db.js';
 import { setIo } from './realtime.js';
+import { listUserSpaces } from './spaces.js';
 
 await getDb().ready;
 const server = http.createServer(createApp());
@@ -13,16 +14,16 @@ const io = new Server(server, { cors: { origin: config.clientUrl, credentials: t
 io.use(async (socket, next) => {
   try {
     const payload = jwt.verify(socket.handshake.auth?.token, config.accessSecret);
-    const member = await getDb().prepare('SELECT family_id FROM family_members WHERE user_id = ?').get(payload.sub);
-    if (!member) return next(new Error('Unauthorized'));
-    socket.familyId = member.family_id;
+    const spaces = await listUserSpaces(getDb(), payload.sub);
+    if (!spaces.length) return next(new Error('Unauthorized'));
+    socket.spaceIds = spaces.map((space) => space.id);
     next();
   } catch {
     next(new Error('Unauthorized'));
   }
 });
 
-io.on('connection', (socket) => socket.join(`family:${socket.familyId}`));
+io.on('connection', (socket) => socket.join(socket.spaceIds.map((spaceId) => `space:${spaceId}`)));
 setIo(io);
 
 server.listen(config.port, () => {

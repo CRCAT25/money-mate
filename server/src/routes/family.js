@@ -6,9 +6,19 @@ import { emitFamily } from '../realtime.js';
 import { bumpFamilyRevision, familyRevisions } from '../revisions.js';
 import { inviteCode } from '../utils.js';
 import { validate } from '../validation.js';
+import { getAccessibleSpace } from '../spaces.js';
 
 const router = express.Router();
 router.use(authenticate);
+
+router.use(async (req, res, next) => {
+  const space = await getAccessibleSpace(getDb(), req.user.id, req.get('X-MoneyMate-Space-Id'));
+  if (!space || space.type !== 'family') return res.status(404).json({ message: 'Bạn chưa thuộc gia đình nào.' });
+  req.space = space;
+  req.user.familyId = space.id;
+  req.user.role = space.role;
+  next();
+});
 
 router.get('/', async (req, res) => {
   const db = getDb();
@@ -80,6 +90,15 @@ router.delete('/members/:memberId', requireOwner, [param('memberId').isUUID()], 
   `).run(req.user.familyId, req.params.memberId);
   if (!result.changes) return res.status(404).json({ message: 'Không tìm thấy thành viên.' });
   await bumpFamilyRevision(db, req.user.familyId, { base: true });
+  emitFamily(req.user.familyId, 'family:changed');
+  res.status(204).end();
+});
+
+router.post('/leave', async (req, res) => {
+  if (req.user.role === 'owner') return res.status(409).json({ message: 'Hãy chuyển quyền chủ gia đình trước khi rời.' });
+  await getDb().prepare('DELETE FROM family_members WHERE family_id = ? AND user_id = ?')
+    .run(req.user.familyId, req.user.id);
+  await bumpFamilyRevision(getDb(), req.user.familyId, { base: true });
   emitFamily(req.user.familyId, 'family:changed');
   res.status(204).end();
 });

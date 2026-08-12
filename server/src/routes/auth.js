@@ -5,12 +5,11 @@ import { body } from 'express-validator';
 import { getDb } from '../db.js';
 import { config } from '../config.js';
 import { authenticate, signAccessToken, signRefreshToken } from '../auth.js';
-import { insertDefaultCategories } from '../defaultCategories.js';
+import { createFamilySpace, ensurePersonalSpace, joinFamilySpace, listUserSpaces } from '../spaces.js';
 import {
   addDays,
   hashToken,
   id,
-  inviteCode,
   publicUser,
   randomToken,
 } from '../utils.js';
@@ -22,10 +21,24 @@ async function userWithFamily(db, userId) {
   return db.prepare(`
     SELECT u.*, fm.family_id, fm.role, f.name AS family_name, f.currency, f.language
     FROM users u
-    JOIN family_members fm ON fm.user_id = u.id
-    JOIN families f ON f.id = fm.family_id
+    LEFT JOIN family_members fm ON fm.user_id = u.id
+    LEFT JOIN families f ON f.id = fm.family_id AND f.space_type = 'family'
     WHERE u.id = ?
   `).get(userId);
+}
+
+async function sessionPayload(db, user, preferredType) {
+  const spaces = await listUserSpaces(db, user.id);
+  const defaultSpace = spaces.find((space) => space.type === preferredType)
+    || spaces.find((space) => space.type === 'family')
+    || spaces[0];
+  const family = spaces.find((space) => space.type === 'family') || null;
+  return {
+    user: { ...publicUser(user), role: family?.role || null },
+    family,
+    spaces,
+    defaultSpaceId: defaultSpace?.id || null,
+  };
 }
 
 async function createSession(db, user) {
@@ -44,7 +57,7 @@ router.post(
     body('displayName').trim().isLength({ min: 2, max: 60 }).withMessage('Tên hiển thị cần từ 2 đến 60 ký tự.'),
     body('email').isEmail().normalizeEmail().withMessage('Email không hợp lệ.'),
     body('password').isLength({ min: 8 }).withMessage('Mật khẩu cần ít nhất 8 ký tự.'),
-    body('mode').isIn(['create', 'join']).withMessage('Hình thức tạo tài khoản không hợp lệ.'),
+    body('mode').isIn(['personal', 'create', 'join']).withMessage('Hình thức tạo tài khoản không hợp lệ.'),
   ],
   validate,
   async (req, res, next) => {
@@ -58,11 +71,9 @@ router.post(
 
       let family;
       if (mode === 'join') {
-        family = await db.prepare('SELECT * FROM families WHERE invite_code = ?').get(String(code || '').trim().toUpperCase());
+        family = await db.prepare("SELECT * FROM families WHERE space_type = 'family' AND invite_code = ?").get(String(code || '').trim().toUpperCase());
         if (!family) return res.status(404).json({ message: 'Mã mời không đúng hoặc đã thay đổi.' });
-        const memberCount = await db.prepare('SELECT COUNT(*) AS count FROM family_members WHERE family_id = ?').get(family.id);
-        if (Number(memberCount.count) >= 2) return res.status(409).json({ message: 'Gia đình này đã đủ hai thành viên.' });
-      } else if (!String(familyName || '').trim()) {
+      } else if (mode === 'create' && !String(familyName || '').trim()) {
         return res.status(422).json({ message: 'Vui lòng nhập tên gia đình.' });
       }
 
@@ -76,20 +87,18 @@ router.post(
           VALUES (?, ?, ?, ?)
         `).run(userId, email, passwordHash, displayName.trim());
 
-        if (mode === 'create') {
-          family = { id: id(), name: familyName.trim(), invite_code: inviteCode() };
-          await transaction.prepare('INSERT INTO families (id, name, invite_code) VALUES (?, ?, ?)')
-            .run(family.id, family.name, family.invite_code);
-          await insertDefaultCategories(transaction, family.id, id);
-        }
-
-        await transaction.prepare('INSERT INTO family_members (family_id, user_id, role) VALUES (?, ?, ?)')
-          .run(family.id, userId, mode === 'create' ? 'owner' : 'member');
         await transaction.prepare(`
           INSERT INTO action_tokens (id, user_id, type, token_hash, expires_at)
           VALUES (?, ?, 'verify_email', ?, ?)
         `).run(id(), userId, hashToken(verificationToken), addDays(new Date(), 1).toISOString());
       });
+
+      await ensurePersonalSpace(db, userId);
+      if (mode === 'create') {
+        await createFamilySpace(db, userId, { name: familyName, currency: 'VND', language: 'vi' });
+      } else if (mode === 'join') {
+        await joinFamilySpace(db, userId, code);
+      }
 
       const verifyUrl = `${config.clientUrl}/verify-email?token=${verificationToken}`;
       console.info(`[MoneyMate] Verify ${email}: ${verifyUrl}`);
@@ -133,19 +142,12 @@ router.post(
     }
 
     const fullUser = await userWithFamily(db, user.id);
-    if (!fullUser) {
-      return res.status(403).json({ message: 'Tài khoản này hiện chưa thuộc gia đình nào.' });
-    }
+    await ensurePersonalSpace(db, user.id);
     const session = await createSession(db, fullUser);
+    const profile = await sessionPayload(db, fullUser);
     return res.json({
       ...session,
-      user: publicUser(fullUser),
-      family: {
-        id: fullUser.family_id,
-        name: fullUser.family_name,
-        currency: fullUser.currency,
-        language: fullUser.language,
-      },
+      ...profile,
     });
   },
 );
@@ -218,15 +220,7 @@ router.post(
 router.get('/me', authenticate, async (req, res) => {
   const db = getDb();
   const user = await userWithFamily(db, req.user.id);
-  res.json({
-    user: publicUser(user),
-    family: {
-      id: user.family_id,
-      name: user.family_name,
-      currency: user.currency,
-      language: user.language,
-    },
-  });
+  res.json(await sessionPayload(db, user));
 });
 
 export default router;
