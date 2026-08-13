@@ -430,6 +430,21 @@ test('budget save scopes support recurring plans and monthly overrides', async (
   assert.equal(followingMonth.body.items.find((item) => item.category.id === transport.id).amount, 700000);
 
   await request(app)
+    .post('/api/budgets')
+    .set(auth)
+    .send({ month: '2027-04', categoryId: transport.id, amount: 750000 })
+    .expect(201);
+
+  await request(app)
+    .post('/api/budgets/batch')
+    .set(auth)
+    .send({ month: '2027-04', scope: 'future', items: [{ categoryId: transport.id, amount: 900000 }] })
+    .expect(200);
+
+  const updatedLegacyMonth = await request(app).get('/api/budgets?month=2027-04').set(auth).expect(200);
+  assert.equal(updatedLegacyMonth.body.items.find((item) => item.category.id === transport.id).amount, 900000);
+
+  await request(app)
     .post('/api/budgets/batch')
     .set(auth)
     .send({ month: '2027-05', scope: 'future', items: [{ categoryId: transport.id, amount: 0 }] })

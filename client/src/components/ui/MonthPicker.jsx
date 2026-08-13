@@ -27,8 +27,8 @@ export default function MonthPicker({ value, onChange, compact = false, dense = 
       <span className={`${labelClass} ${dense ? 'text-xs' : compact ? 'text-sm' : ''} text-center font-extrabold capitalize text-ink`}>
         {isBudget ? (
           <>
-            <strong className="text-[13px] font-medium tracking-[-0.01em] sm:text-sm">{display.month}</strong>
-            <span className="whitespace-nowrap text-[10px] font-semibold text-ink/42 sm:text-[11px]">({display.range})</span>
+            <strong className="inline-flex items-center text-[13px] font-medium leading-normal tracking-[-0.01em] sm:text-sm">{display.month}</strong>
+            <span className="inline-flex items-center whitespace-nowrap text-[10px] font-semibold leading-normal text-ink/42 sm:text-[11px]">({display.range})</span>
           </>
         ) : display}
       </span>

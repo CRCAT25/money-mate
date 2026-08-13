@@ -56,8 +56,8 @@ router.get(
 
     const items = categories.map((category) => {
       const source = overridesByCategory.get(category.category_id)
-        || legacyByCategory.get(category.category_id)
-        || rulesByCategory.get(category.category_id);
+        || rulesByCategory.get(category.category_id)
+        || legacyByCategory.get(category.category_id);
       const amount = Number(source?.amount || 0);
       const spent = Number(category.spent);
       return {

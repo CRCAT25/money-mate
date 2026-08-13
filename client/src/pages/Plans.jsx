@@ -173,33 +173,25 @@ function BudgetSummary({ data, currency }) {
   const over = data.remaining < 0;
   const hasBudget = data.planned > 0;
   const spentPercentage = hasBudget ? Math.min(100, Math.max(0, (data.spent / data.planned) * 100)) : 0;
-  const remainingPercentage = hasBudget ? Math.max(0, 100 - spentPercentage) : 0;
-  const percentage = hasBudget ? Math.round((data.spent / data.planned) * 100) : 0;
 
   return (
     <section className="overflow-hidden rounded-[16px] border border-ink/[0.07] bg-paper/90 px-4 py-3 shadow-card sm:px-5">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-sm font-semibold tracking-[-0.015em] text-ink">Tổng ngân sách</h2>
-        <div className={`shrink-0 whitespace-nowrap text-right text-xs font-normal ${over ? 'text-[#E45757]' : 'text-ink/56'}`}>
-          {over ? 'Vượt' : 'Còn lại'}: <strong className="font-medium text-ink">{formatMoney(Math.abs(data.remaining), currency)}</strong>
-        </div>
+        <span className="shrink-0 whitespace-nowrap text-right text-xs font-medium text-ink/78">{formatMoney(data.planned, currency)}</span>
       </div>
 
-      <div className="mt-3 flex items-center gap-3">
-        <div
-          className="flex h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-ink/[0.06]"
-          role="img"
-          aria-label={`Đã chi ${formatMoney(data.spent, currency)}, ${over ? 'vượt' : 'còn'} ${formatMoney(Math.abs(data.remaining), currency)}`}
-        >
-          <span className="h-full bg-[#E45757] transition-[width] duration-700 ease-out" style={{ width: `${spentPercentage}%` }} />
-          <span className="h-full bg-[#3B82D0] transition-[width] duration-700 ease-out" style={{ width: `${remainingPercentage}%` }} />
-        </div>
-        <span className={`w-9 shrink-0 text-right text-[11px] font-normal tabular-nums ${over ? 'text-[#E45757]' : 'text-ink/38'}`}>{percentage}%</span>
+      <div
+        className="mt-3 h-2 overflow-hidden rounded-full bg-ink/[0.09]"
+        role="img"
+        aria-label={`Đã chi ${formatMoney(data.spent, currency)}, ${over ? 'vượt' : 'còn'} ${formatMoney(Math.abs(data.remaining), currency)}`}
+      >
+        <span className={`block h-full rounded-full transition-[width] duration-700 ease-out ${over ? 'bg-[#E45757]' : 'bg-[#3B82D0]'}`} style={{ width: `${spentPercentage}%` }} />
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-normal text-ink/38">
-        <span className="truncate">Ngân sách <strong className="font-normal text-ink/62">{formatMoney(data.planned, currency)}</strong></span>
-        <span className="truncate text-right">Chi tiêu: <strong className="font-normal text-ink/62">{formatMoney(data.spent, currency)}</strong></span>
+        <span className="truncate">Thực tế: <strong className="font-normal text-ink/62">{formatMoney(data.spent, currency)}</strong></span>
+        <span className={`truncate text-right ${over ? 'text-[#E45757]' : ''}`}>{over ? 'Vượt' : 'Còn lại'}: <strong className={`font-normal ${over ? 'text-[#E45757]' : 'text-ink/62'}`}>{formatMoney(Math.abs(data.remaining), currency)}</strong></span>
       </div>
     </section>
   );
@@ -232,9 +224,7 @@ function BudgetOverview({ items, currency, onEdit }) {
 
 function BudgetViewRow({ item, currency, index }) {
   const over = item.remaining < 0;
-  const percentage = Math.round((item.spent / item.amount) * 100);
   const spentPercentage = Math.min(100, Math.max(0, (item.spent / item.amount) * 100));
-  const remainingPercentage = Math.max(0, 100 - spentPercentage);
 
   return (
     <article className="animate-rise-in border-b border-ink/[0.07] py-3 last:border-b-0" style={{ animationDelay: `${Math.min(index * 30, 180)}ms` }}>
@@ -245,20 +235,14 @@ function BudgetViewRow({ item, currency, index }) {
           </span>
           <span className="min-w-0 truncate text-sm font-medium tracking-[-0.015em] text-ink">{item.category.name}</span>
         </div>
-        <div className={`shrink-0 whitespace-nowrap text-right text-[10px] font-normal ${over ? 'text-[#E45757]' : 'text-ink/42'}`}>
-          {over ? 'Vượt' : 'Còn lại'}: <strong className={`text-xs font-medium ${over ? 'text-[#E45757]' : 'text-ink/78'}`}>{formatMoney(Math.abs(item.remaining), currency)}</strong>
-        </div>
+        <span className="shrink-0 whitespace-nowrap text-right text-xs font-medium text-ink/78">{formatMoney(item.amount, currency)}</span>
       </div>
-      <div className="mt-2.5 flex items-center gap-2.5">
-        <div className="flex h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-ink/[0.055]" role="img" aria-label={`${item.category.name}: đã dùng ${percentage}% ngân sách`}>
-          <span className="h-full bg-[#E45757] transition-[width] duration-700 ease-out" style={{ width: `${spentPercentage}%` }} />
-          <span className="h-full bg-[#3B82D0] transition-[width] duration-700 ease-out" style={{ width: `${remainingPercentage}%` }} />
-        </div>
-        <span className={`w-9 shrink-0 text-right text-[10px] font-normal tabular-nums ${over ? 'text-[#E45757]' : 'text-ink/35'}`}>{percentage}%</span>
+      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-ink/[0.09]" role="img" aria-label={`${item.category.name}: đã chi ${formatMoney(item.spent, currency)} trên ngân sách ${formatMoney(item.amount, currency)}`}>
+        <span className={`block h-full rounded-full transition-[width] duration-700 ease-out ${over ? 'bg-[#E45757]' : 'bg-[#3B82D0]'}`} style={{ width: `${spentPercentage}%` }} />
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] font-normal text-ink/34">
-        <span className="truncate">Ngân sách: <strong className="font-normal text-ink/58">{formatMoney(item.amount, currency)}</strong></span>
-        <span className="truncate text-right">Thực tế: <strong className="font-normal text-ink/58">{formatMoney(item.spent, currency)}</strong></span>
+        <span className="truncate">Thực tế: <strong className="font-normal text-ink/58">{formatMoney(item.spent, currency)}</strong></span>
+        <span className={`truncate text-right ${over ? 'text-[#E45757]' : ''}`}>{over ? 'Vượt' : 'Còn lại'}: <strong className={`font-normal ${over ? 'text-[#E45757]' : 'text-ink/58'}`}>{formatMoney(Math.abs(item.remaining), currency)}</strong></span>
       </div>
     </article>
   );

@@ -16,7 +16,7 @@ export function ToastProvider({ children }) {
   const notify = useCallback((message, type = 'success') => {
     const id = crypto.randomUUID();
     setToasts((items) => [...items, { id, message, type }]);
-    window.setTimeout(() => dismiss(id), type === 'error' ? 3300 : 1600);
+    window.setTimeout(() => dismiss(id), type === 'error' ? 2700 : 700);
   }, [dismiss]);
 
   const value = useMemo(() => ({ notify }), [notify]);
