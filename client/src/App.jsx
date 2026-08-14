@@ -19,6 +19,25 @@ const Settings = lazy(() => import('./pages/Settings.jsx'));
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
+  useEffect(() => {
+    if (!user || loading) return undefined;
+    const preload = () => {
+      void Promise.allSettled([
+        import('./pages/Plans.jsx'),
+        import('./pages/TransactionForm.jsx'),
+        import('./pages/Categories.jsx'),
+        import('./pages/Reports.jsx'),
+        import('./pages/Settings.jsx'),
+      ]);
+    };
+    if ('requestIdleCallback' in window) {
+      const idleId = window.requestIdleCallback(preload, { timeout: 1200 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+    const timeoutId = window.setTimeout(preload, 250);
+    return () => window.clearTimeout(timeoutId);
+  }, [user, loading]);
+
   if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" replace />;
   return (

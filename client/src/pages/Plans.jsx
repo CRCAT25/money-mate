@@ -14,21 +14,30 @@ const emptyPlan = { month: '', planned: 0, spent: 0, remaining: 0, percentage: 0
 
 export default function Plans() {
   const { family } = useAuth();
-  const { revision, setCache, loadCache } = useFamilyData();
+  const { touch, getCache, setCache, loadCache, prefetchPages } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
-  const [data, setData] = useState(emptyPlan);
+  const initialPlanCache = getCache(`plans:${month}`);
+  const [data, setData] = useState(() => initialPlanCache?.data || emptyPlan);
   const [previousAmounts, setPreviousAmounts] = useState({});
   const [draftAmounts, setDraftAmounts] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !initialPlanCache);
   const [editing, setEditing] = useState(false);
+  const [categoryView, setCategoryView] = useState('planned');
   const [saving, setSaving] = useState(false);
   const [saveOptionsOpen, setSaveOptionsOpen] = useState(false);
 
   useEffect(() => {
     const cacheKey = `plans:${month}`;
     let active = true;
-    setLoading(true);
+    const cached = getCache(cacheKey);
+    if (cached) {
+      setData(cached.data);
+      setDraftAmounts(createDraftAmounts(cached.data.items));
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     loadCache(cacheKey, async () => {
       const { data: nextData } = await api.get('/budgets', { params: { month } });
       return { data: nextData };
@@ -50,7 +59,7 @@ export default function Plans() {
       setPreviousAmounts(Object.fromEntries(previousData.items.map((item) => [item.category.id, item.amount])));
     }).catch(() => active && setPreviousAmounts({}));
     return () => { active = false; };
-  }, [month, notify, loadCache]);
+  }, [month, notify, getCache, loadCache]);
 
   const openEditor = () => {
     setDraftAmounts(createDraftAmounts(data.items));
@@ -101,10 +110,12 @@ export default function Plans() {
         scope,
         items: changes.map(({ item, amount }) => ({ categoryId: item.category.id, amount })),
       });
+      touch('base');
       const { data: nextData } = await api.get('/budgets', { params: { month } });
       setData(nextData);
       setDraftAmounts(createDraftAmounts(nextData.items));
-      setCache(`plans:${month}`, { data: nextData, revision });
+      setCache(`plans:${month}`, { data: nextData });
+      void prefetchPages(month);
       setSaveOptionsOpen(false);
       setEditing(false);
       notify(saveResult.message);
@@ -154,7 +165,13 @@ export default function Plans() {
       ) : (
         <>
           <BudgetSummary data={data} currency={family.currency} />
-          <BudgetOverview items={data.items} currency={family.currency} onEdit={openEditor} />
+          <BudgetOverview
+            items={data.items}
+            currency={family.currency}
+            view={categoryView}
+            onViewChange={setCategoryView}
+            onEdit={openEditor}
+          />
         </>
       )}
 
@@ -197,34 +214,52 @@ function BudgetSummary({ data, currency }) {
   );
 }
 
-function BudgetOverview({ items, currency, onEdit }) {
-  const plannedItems = items.filter((item) => item.id);
-  if (!plannedItems.length) {
-    return (
-      <section className="rounded-[16px] border border-ink/[0.065] bg-paper/90 px-5 py-8 text-center shadow-card">
-        <div className="text-sm font-medium text-ink">Chưa có ngân sách tháng này</div>
-        <p className="mx-auto mt-1.5 max-w-xs text-[11px] leading-5 text-ink/42">Thiết lập ngân sách theo danh mục để theo dõi số đã chi và phần còn lại.</p>
-        <button type="button" className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-[11px] bg-[#3B82D0] px-4 text-xs font-medium text-white shadow-sm" onClick={onEdit}><Pencil className="size-3.5" /> Thiết lập ngân sách</button>
-      </section>
-    );
-  }
+function BudgetOverview({ items, currency, view, onViewChange, onEdit }) {
+  const plannedItems = items.filter((item) => item.amount > 0);
+  const visibleItems = view === 'all' ? items : plannedItems;
 
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between gap-3 px-1">
-        <h2 className="text-sm font-semibold tracking-[-0.015em] text-ink">Chi tiết ngân sách</h2>
-        <span className="text-[10px] font-normal text-ink/35">{plannedItems.length} hạng mục</span>
+        <h2 className="shrink-0 text-sm font-semibold tracking-[-0.015em] text-ink">Chi tiết ngân sách</h2>
+        <div className="grid min-w-0 grid-cols-2 rounded-[10px] bg-ink/[0.055] p-0.5">
+          <BudgetViewButton active={view === 'all'} label="Tất cả danh mục" count={items.length} onClick={() => onViewChange('all')} />
+          <BudgetViewButton active={view === 'planned'} label="Đã thiết lập" count={plannedItems.length} onClick={() => onViewChange('planned')} />
+        </div>
       </div>
-      <div className="overflow-hidden rounded-[16px] border border-ink/[0.065] bg-paper/90 px-3.5 shadow-card sm:px-4">
-        {plannedItems.map((item, index) => <BudgetViewRow key={item.category.id} item={item} currency={currency} index={index} />)}
-      </div>
+      {visibleItems.length ? (
+        <div className="overflow-hidden rounded-[16px] border border-ink/[0.065] bg-paper/90 px-3.5 shadow-card sm:px-4">
+          {visibleItems.map((item, index) => <BudgetViewRow key={item.category.id} item={item} currency={currency} index={index} />)}
+        </div>
+      ) : (
+        <div className="rounded-[16px] border border-ink/[0.065] bg-paper/90 px-5 py-8 text-center shadow-card">
+          <div className="text-sm font-medium text-ink">Chưa có ngân sách tháng này</div>
+          <p className="mx-auto mt-1.5 max-w-xs text-[11px] leading-5 text-ink/42">Thiết lập ngân sách theo danh mục để theo dõi số đã chi và phần còn lại.</p>
+          <button type="button" className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-[11px] bg-[#3B82D0] px-4 text-xs font-medium text-white shadow-sm" onClick={onEdit}><Pencil className="size-3.5" /> Thiết lập ngân sách</button>
+        </div>
+      )}
     </section>
+  );
+}
+
+function BudgetViewButton({ active, label, count, onClick }) {
+  return (
+    <button
+      type="button"
+      className={`flex min-h-7 items-center justify-center gap-1 whitespace-nowrap rounded-[8px] px-2 text-[9px] font-medium transition active:scale-[0.98] ${active ? 'bg-white text-ink shadow-sm' : 'text-ink/38'}`}
+      onClick={onClick}
+    >
+      {label}
+      <span className={`tabular-nums ${active ? 'text-ink/42' : 'text-ink/25'}`}>{count}</span>
+    </button>
   );
 }
 
 function BudgetViewRow({ item, currency, index }) {
   const over = item.remaining < 0;
-  const spentPercentage = Math.min(100, Math.max(0, (item.spent / item.amount) * 100));
+  const spentPercentage = item.amount > 0
+    ? Math.min(100, Math.max(0, (item.spent / item.amount) * 100))
+    : item.spent > 0 ? 100 : 0;
 
   return (
     <article className="animate-rise-in border-b border-ink/[0.07] py-3 last:border-b-0" style={{ animationDelay: `${Math.min(index * 30, 180)}ms` }}>
@@ -340,7 +375,7 @@ function PlanPageSkeleton({ editing }) {
 }
 
 function createDraftAmounts(items) {
-  return Object.fromEntries(items.map((item) => [item.category.id, item.id ? String(item.amount) : '']));
+  return Object.fromEntries(items.map((item) => [item.category.id, item.amount > 0 ? String(item.amount) : '']));
 }
 
 function formatInputAmount(value) {

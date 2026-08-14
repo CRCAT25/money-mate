@@ -18,7 +18,7 @@ export default function TransactionForm() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { family } = useAuth();
-  const { categories, touch, loading: baseLoading } = useFamilyData();
+  const { categories, touch, prefetchPages, loading: baseLoading } = useFamilyData();
   const { notify } = useToast();
   const [form, setForm] = useState({
     type: params.get('type') === 'income' ? 'income' : 'expense',
@@ -64,6 +64,7 @@ export default function TransactionForm() {
       const { data } = transactionId ? await api.patch(`/transactions/${transactionId}`, payload) : await api.post('/transactions', payload);
       notify(data.message);
       touch();
+      void prefetchPages([localToday().slice(0, 7), form.transactionDate.slice(0, 7)]);
       if (transactionId) {
         navigate('/');
       } else {
@@ -93,7 +94,7 @@ export default function TransactionForm() {
           <span />
         </header>
 
-        <form onSubmit={submit} className="pb-[calc(128px+env(safe-area-inset-bottom))] lg:pb-0">
+        <form onSubmit={submit} className="pb-[calc(136px+env(safe-area-inset-bottom))] lg:pb-0">
           <div className="divide-y divide-ink/[0.07] px-4 sm:px-6">
             <div className="grid min-h-[54px] grid-cols-[70px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[112px_minmax(0,1fr)]">
               <span className="text-[13px] font-medium text-ink/68 sm:text-sm">Ngày</span>
@@ -137,19 +138,9 @@ export default function TransactionForm() {
           </div>
 
           <div className="px-4 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-5">
-            <div className="mb-3 flex items-end justify-between gap-3">
-              <div>
-                <p className="text-[15px] font-semibold text-ink">Danh mục</p>
-                <p className="mt-0.5 text-[10px] font-normal text-ink/38">Chọn mục phù hợp với giao dịch</p>
-              </div>
-              <button
-                type="button"
-                className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-[10px] bg-mint/70 px-2.5 text-[11px] font-medium text-forest transition active:scale-[0.97] hover:bg-mint"
-                onClick={() => navigate('/categories')}
-              >
-                <Grid2X2 className="size-3.5" />
-                Quản lý
-              </button>
+            <div className="mb-3">
+              <p className="text-[15px] font-semibold text-ink">Danh mục</p>
+              <p className="mt-0.5 text-[10px] font-normal text-ink/38">Chọn mục phù hợp với giao dịch</p>
             </div>
 
             <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5 lg:grid-cols-6">
@@ -172,9 +163,17 @@ export default function TransactionForm() {
               })}
             </div>
 
+            <button
+              type="button"
+              className="mt-2.5 flex min-h-9 w-full items-center justify-center gap-1.5 rounded-[10px] border border-ink/[0.07] bg-white/45 px-3 text-[11px] font-medium text-forest transition active:scale-[0.99] hover:bg-mint/55"
+              onClick={() => navigate('/categories')}
+            >
+              <Grid2X2 className="size-3.5" />
+              Quản lý danh mục
+            </button>
           </div>
 
-          <div className="fixed inset-x-0 bottom-[calc(68px+env(safe-area-inset-bottom))] z-30 border-t border-ink/[0.07] bg-paper/95 px-4 py-2 shadow-[0_-8px_22px_rgba(32,49,44,0.07)] backdrop-blur-xl lg:static lg:border-t lg:bg-transparent lg:px-6 lg:pb-5 lg:pt-0 lg:shadow-none">
+          <div className="fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom))] z-30 border-t border-ink/[0.07] bg-paper/95 px-4 py-2 shadow-[0_-8px_22px_rgba(32,49,44,0.07)] backdrop-blur-xl lg:static lg:border-t lg:bg-transparent lg:px-6 lg:pb-5 lg:pt-0 lg:shadow-none">
             <button className="flex min-h-11 w-full items-center justify-center gap-2 rounded-[12px] bg-coral px-5 text-[13px] font-semibold text-white shadow-md shadow-coral/20 transition active:scale-[0.99] hover:bg-[#d9634b] disabled:pointer-events-none disabled:opacity-50" disabled={submitting || !form.amount || !form.categoryId}>
               {submitting ? <LoaderCircle className="size-[18px] animate-spin" /> : <><Check className="size-[18px]" /> {transactionId ? 'Lưu thay đổi' : form.type === 'expense' ? 'Nhập khoản chi' : 'Nhập khoản thu'}</>}
             </button>

@@ -14,12 +14,13 @@ const weekDays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
 export default function Home() {
   const { family } = useAuth();
-  const { touch, loadCache, loading: baseLoading, isPersonal } = useFamilyData();
+  const { touch, getCache, loadCache, prefetchPages, loading: baseLoading, isPersonal } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
-  const [summary, setSummary] = useState(null);
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const initialHomeCache = getCache(`home:${month}`);
+  const [summary, setSummary] = useState(() => initialHomeCache?.summary || null);
+  const [transactions, setTransactions] = useState(() => initialHomeCache?.transactions || []);
+  const [loading, setLoading] = useState(() => !initialHomeCache);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -27,9 +28,17 @@ export default function Home() {
     if (baseLoading) return undefined;
 
     let active = true;
-    setLoading(true);
+    const cacheKey = `home:${month}`;
+    const cached = getCache(cacheKey);
+    if (cached) {
+      setSummary(cached.summary);
+      setTransactions(cached.transactions);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
 
-    const homeRequest = loadCache(`home:${month}`, async () => {
+    const homeRequest = loadCache(cacheKey, async () => {
       const [summaryResponse, transactionResponse] = await Promise.all([
         api.get('/reports/summary', { params: { month } }),
         api.get('/transactions', { params: { month, limit: 200 } }),
@@ -37,25 +46,8 @@ export default function Home() {
       return { summary: summaryResponse.data, transactions: transactionResponse.data };
     });
 
-    // Warm the other menu screens while Home is visible. Shared in-flight requests
-    // prevent duplicate calls if the user opens a menu before preloading finishes.
-    loadCache(`plans:${month}`, async () => {
-      const { data } = await api.get('/budgets', { params: { month } });
-      return { data };
-    }).catch(() => {});
-    loadCache(`reports:${month}::`, async () => {
-      const [homeData, trendResponse] = await Promise.all([
-        homeRequest,
-        api.get('/reports/trend', { params: { endMonth: month, months: 6 } }),
-      ]);
-      return {
-        data: {
-          summary: homeData.summary,
-          trend: trendResponse.data,
-          transactions: homeData.transactions,
-        },
-      };
-    }).catch(() => {});
+    // Reuse the current request while warming the other menu screens.
+    void prefetchPages(month);
 
     homeRequest.then((nextData) => {
       if (!active) return;
@@ -64,7 +56,7 @@ export default function Home() {
     }).catch((error) => active && notify(errorMessage(error), 'error'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [month, notify, loadCache, baseLoading]);
+  }, [month, notify, getCache, loadCache, prefetchPages, baseLoading]);
 
   const dailyCashflow = useMemo(() => transactions.reduce((totals, transaction) => {
     const day = totals[transaction.transactionDate] || { income: 0, expense: 0 };
@@ -81,6 +73,7 @@ export default function Home() {
       setDeleteTarget(null);
       notify('Đã xóa giao dịch.');
       touch();
+      void prefetchPages(month);
     } catch (error) {
       notify(errorMessage(error), 'error');
     } finally {

@@ -13,20 +13,28 @@ import { currentMonth, formatMoney } from '../utils/formatters.js';
 
 export default function Reports() {
   const { family } = useAuth();
-  const { categories, familyDetails, touch, loading: baseLoading, loadCache, isPersonal } = useFamilyData();
+  const { categories, familyDetails, touch, getCache, loading: baseLoading, loadCache, prefetchPages, isPersonal } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
   const [type, setType] = useState('expense');
   const [categoryId, setCategoryId] = useState('');
   const [memberId, setMemberId] = useState('');
-  const [data, setData] = useState({ summary: null, trend: [], transactions: [] });
-  const [loading, setLoading] = useState(true);
+  const initialReportsCache = getCache(`reports:${month}::`);
+  const [data, setData] = useState(() => initialReportsCache?.data || { summary: null, trend: [], transactions: [] });
+  const [loading, setLoading] = useState(() => !initialReportsCache);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const cacheKey = `reports:${month}:${memberId}:${categoryId}`;
-    let active = true; setLoading(true);
+    let active = true;
+    const cached = getCache(cacheKey);
+    if (cached) {
+      setData(cached.data);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     const transactionParams = { month, limit: 200 };
     if (categoryId) transactionParams.categoryId = categoryId;
     if (memberId) transactionParams.memberId = memberId;
@@ -46,7 +54,7 @@ export default function Reports() {
       .catch((error) => notify(errorMessage(error), 'error'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [month, memberId, categoryId, notify, loadCache]);
+  }, [month, memberId, categoryId, notify, getCache, loadCache]);
 
   const chartCategories = useMemo(() => data.summary?.categories.filter((item) => item.type === type) || [], [data.summary, type]);
   const trend = data.trend.map((item) => ({ ...item, label: `T${Number(item.month.slice(5))}` }));
@@ -54,7 +62,7 @@ export default function Reports() {
 
   const remove = async (transaction) => {
     setDeleting(true);
-    try { await api.delete(`/transactions/${transaction.id}`); setDeleteTarget(null); notify('Đã xóa giao dịch.'); touch(); }
+    try { await api.delete(`/transactions/${transaction.id}`); setDeleteTarget(null); notify('Đã xóa giao dịch.'); touch(); void prefetchPages(month); }
     catch (error) { notify(errorMessage(error), 'error'); }
     finally { setDeleting(false); }
   };

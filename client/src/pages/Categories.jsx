@@ -7,13 +7,29 @@ import Skeleton, { CategoryGridSkeleton } from '../components/ui/Skeleton.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import api, { errorMessage } from '../utils/api.js';
+import { currentMonth } from '../utils/formatters.js';
 
-const icons = ['Utensils', 'House', 'Car', 'HeartPulse', 'GraduationCap', 'Gamepad2', 'ShoppingBag', 'ReceiptText', 'PiggyBank', 'Shapes', 'WalletCards', 'Gift', 'TrendingUp', 'Sparkles', 'Coffee', 'Plane', 'Baby', 'PawPrint'];
-const colors = ['#F9735B', '#E6A15C', '#4A8F8B', '#E56B78', '#5377B8', '#9B78B6', '#D27B9A', '#708090', '#45A878', '#8E938B', '#258C68', '#C6932D'];
+const icons = [
+  'Utensils', 'Apple', 'Beef', 'Coffee', 'Martini', 'CakeSlice',
+  'House', 'ShoppingBag', 'Shirt', 'Store', 'Package', 'Gift',
+  'Car', 'Bike', 'BusFront', 'TrainFront', 'Plane', 'Fuel',
+  'HeartPulse', 'Hospital', 'Stethoscope', 'Dumbbell', 'Baby', 'PawPrint',
+  'GraduationCap', 'BookOpen', 'Laptop', 'BriefcaseBusiness', 'Phone', 'Smartphone',
+  'Gamepad2', 'Clapperboard', 'Music2', 'Ticket', 'PartyPopper', 'Sparkles',
+  'ReceiptText', 'WalletCards', 'Banknote', 'Coins', 'PiggyBank', 'HandCoins',
+  'CircleDollarSign', 'TrendingUp', 'Landmark', 'ShieldCheck', 'Zap', 'Droplets',
+  'Wifi', 'Wrench', 'TreePine', 'Cat', 'Palette', 'Shapes',
+];
+const colors = [
+  '#F9735B', '#F07A53', '#E6A15C', '#C6932D', '#B7A83B', '#7FA34A', '#45A878', '#258C68',
+  '#3EAA72', '#249272', '#4A8F8B', '#318F8B', '#3B8FA8', '#397DB5', '#5377B8', '#706BC1',
+  '#9B78B6', '#B568AA', '#D27B9A', '#CE6B91', '#E56B78', '#D95454', '#A86F5A', '#8C786C',
+  '#8E938B', '#7B8794', '#708090', '#667482', '#5E7F75', '#4F7564', '#324F48', '#334155',
+];
 const blank = { name: '', type: 'expense', icon: 'Shapes', color: '#4A8F8B' };
 
 export default function Categories() {
-  const { categories, reloadBaseData, loading } = useFamilyData();
+  const { categories, reloadBaseData, prefetchPages, loading } = useFamilyData();
   const { notify } = useToast();
   const [tab, setTab] = useState('expense');
   const [modal, setModal] = useState(null);
@@ -31,13 +47,13 @@ export default function Categories() {
       if (modal === 'create') await api.post('/categories', form);
       else await api.patch(`/categories/${modal.id}`, { name: form.name, icon: form.icon, color: form.color });
       notify(modal === 'create' ? 'Đã thêm danh mục mới.' : 'Đã cập nhật danh mục.');
-      setModal(null); await reloadBaseData();
+      setModal(null); await reloadBaseData(); void prefetchPages(currentMonth());
     } catch (error) { notify(errorMessage(error), 'error'); }
     finally { setSubmitting(false); }
   };
   const remove = async (category) => {
     setDeleting(true);
-    try { await api.delete(`/categories/${category.id}`); setDeleteTarget(null); notify('Đã xóa danh mục.'); await reloadBaseData(); }
+    try { await api.delete(`/categories/${category.id}`); setDeleteTarget(null); notify('Đã xóa danh mục.'); await reloadBaseData(); void prefetchPages(currentMonth()); }
     catch (error) { notify(errorMessage(error), 'error'); }
     finally { setDeleting(false); }
   };
@@ -74,8 +90,8 @@ export default function Categories() {
         <form onSubmit={submit} className="space-y-5">
           {modal === 'create' && <div className="grid grid-cols-2 rounded-2xl bg-ink/[0.05] p-1.5">{[['expense', 'Khoản chi'], ['income', 'Khoản thu']].map(([value, label]) => <button type="button" key={value} onClick={() => setForm({ ...form, type: value })} className={`min-h-11 rounded-xl text-sm font-extrabold ${form.type === value ? 'bg-white text-ink shadow-sm' : 'text-ink/40'}`}>{label}</button>)}</div>}
           <label className="block"><span className="label">Tên danh mục</span><input className="field" maxLength="40" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ví dụ: Thú cưng" required /></label>
-          <div><span className="label">Biểu tượng</span><div className="grid grid-cols-6 gap-2">{icons.map((icon) => <button type="button" key={icon} onClick={() => setForm({ ...form, icon })} className={`grid aspect-square place-items-center rounded-xl border ${form.icon === icon ? 'border-forest bg-mint text-forest' : 'border-ink/[0.07] bg-white text-ink/45'}`}><CategoryIcon name={icon} className="size-5" /></button>)}</div></div>
-          <div><span className="label">Màu sắc</span><div className="flex flex-wrap gap-3">{colors.map((color) => <button type="button" key={color} onClick={() => setForm({ ...form, color })} className={`grid size-9 place-items-center rounded-full transition ${form.color === color ? 'ring-2 ring-ink ring-offset-2' : ''}`} style={{ backgroundColor: color }}>{form.color === color && <span className="size-2 rounded-full bg-white" />}</button>)}</div></div>
+          <div><span className="label">Biểu tượng</span><div className="grid max-h-56 grid-cols-6 gap-2 overflow-y-auto overscroll-contain rounded-xl pr-1">{icons.map((icon) => <button type="button" key={icon} onClick={() => setForm({ ...form, icon })} className={`grid aspect-square place-items-center rounded-xl border transition active:scale-95 ${form.icon === icon ? 'border-forest bg-mint text-forest' : 'border-ink/[0.07] bg-white text-ink/45 hover:border-ink/15 hover:text-ink/65'}`} aria-label={`Chọn biểu tượng ${icon}`}><CategoryIcon name={icon} className="size-5" /></button>)}</div></div>
+          <div><span className="label">Màu sắc</span><div className="grid grid-cols-8 gap-3">{colors.map((color) => <button type="button" key={color} onClick={() => setForm({ ...form, color })} className={`grid aspect-square w-full place-items-center rounded-full transition active:scale-90 ${form.color === color ? 'ring-2 ring-ink ring-offset-2' : ''}`} style={{ backgroundColor: color }} aria-label={`Chọn màu ${color}`}>{form.color === color && <span className="size-2 rounded-full bg-white" />}</button>)}</div></div>
           <div className="flex gap-3 pt-2"><button type="button" className="secondary-button flex-1" onClick={() => setModal(null)}>Hủy</button><button className="primary-button flex-1" disabled={submitting}>{submitting ? <LoaderCircle className="size-5 animate-spin" /> : 'Lưu danh mục'}</button></div>
         </form>
       </Modal>
