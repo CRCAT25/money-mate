@@ -3,6 +3,7 @@ import { body, param, query } from 'express-validator';
 import { authenticate } from '../auth.js';
 import { getDb } from '../db.js';
 import { emitFamily } from '../realtime.js';
+import { sendTransactionPush } from '../push.js';
 import { bumpFamilyRevision } from '../revisions.js';
 import { id, monthRange } from '../utils.js';
 import { validate } from '../validation.js';
@@ -76,8 +77,8 @@ router.get('/:id', [param('id').isUUID()], validate, async (req, res) => {
 
 router.post('/', transactionRules, validate, async (req, res) => {
   const db = getDb();
-  const check = await validateRelations(db, req.space.id, req.body);
-  if (check) return res.status(check.status).json({ message: check.message });
+  const relation = await validateRelations(db, req.space.id, req.body);
+  if (relation.error) return res.status(relation.error.status).json({ message: relation.error.message });
 
   const transactionId = id();
   await db.prepare(`
@@ -97,13 +98,29 @@ router.post('/', transactionRules, validate, async (req, res) => {
   );
   await bumpFamilyRevision(db, req.space.id, { transactions: true });
   emitFamily(req.space.id, 'transactions:changed', { action: 'created', id: transactionId });
+  if (req.body.type === 'expense' && req.space.type === 'family') {
+    try {
+      await sendTransactionPush(db, {
+        spaceId: req.space.id,
+        actorId: req.user.id,
+        actorName: req.user.displayName,
+        amount: req.body.amount,
+        categoryName: relation.category.name,
+        currency: req.space.currency,
+        transactionId,
+      });
+    } catch (error) {
+      // A notification outage must never make a successfully saved expense look failed.
+      console.error('[MoneyMate] Could not dispatch transaction notification:', error.message);
+    }
+  }
   res.status(201).json({ id: transactionId, message: 'Đã lưu giao dịch.' });
 });
 
 router.patch('/:id', [param('id').isUUID(), ...transactionRules], validate, async (req, res) => {
   const db = getDb();
-  const check = await validateRelations(db, req.space.id, req.body);
-  if (check) return res.status(check.status).json({ message: check.message });
+  const relation = await validateRelations(db, req.space.id, req.body);
+  if (relation.error) return res.status(relation.error.status).json({ message: relation.error.message });
 
   const result = await db.prepare(`
     UPDATE transactions SET
@@ -136,10 +153,10 @@ router.delete('/:id', [param('id').isUUID()], validate, async (req, res) => {
 });
 
 async function validateRelations(db, familyId, data) {
-  const category = await db.prepare('SELECT type FROM categories WHERE id = ? AND family_id = ?').get(data.categoryId, familyId);
-  if (!category) return { status: 404, message: 'Không tìm thấy danh mục.' };
-  if (category.type !== data.type) return { status: 422, message: 'Danh mục không phù hợp với loại giao dịch.' };
-  return null;
+  const category = await db.prepare('SELECT name, type FROM categories WHERE id = ? AND family_id = ?').get(data.categoryId, familyId);
+  if (!category) return { error: { status: 404, message: 'Không tìm thấy danh mục.' } };
+  if (category.type !== data.type) return { error: { status: 422, message: 'Danh mục không phù hợp với loại giao dịch.' } };
+  return { category };
 }
 
 function mapTransaction(transaction) {

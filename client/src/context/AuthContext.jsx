@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import api, { setApiSpace } from '../utils/api.js';
+import { disablePushNotifications } from '../utils/pushNotifications.js';
 import { sessionStorage, spaceStorage } from '../utils/storage.js';
 
 const AuthContext = createContext(null);
@@ -20,12 +21,14 @@ export function AuthProvider({ children }) {
       const { data } = await api.get('/auth/me');
       setUser(data.user);
       setSpaces(data.spaces || []);
-      const selectedId = spaceStorage.get(data.user.id);
+      const requestedSpaceId = consumeNotificationSpace();
+      const selectedId = requestedSpaceId || spaceStorage.get(data.user.id);
       const nextSpace = data.spaces?.find((space) => space.id === selectedId)
         || data.spaces?.find((space) => space.id === data.defaultSpaceId)
         || data.spaces?.[0]
         || null;
       setActiveSpaceIdState(nextSpace?.id || null);
+      if (nextSpace) spaceStorage.set(data.user.id, nextSpace.id);
       setApiSpace(nextSpace?.id);
       setFamily(nextSpace);
     } catch {
@@ -43,6 +46,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     loadProfile();
     const expire = () => {
+      void disablePushNotifications({ notifyServer: false });
       setUser(null);
       setFamily(null);
       setSpaces([]);
@@ -58,12 +62,14 @@ export function AuthProvider({ children }) {
     sessionStorage.set(data);
     setUser(data.user);
     setSpaces(data.spaces || []);
-    const selectedId = spaceStorage.get(data.user.id);
+    const requestedSpaceId = consumeNotificationSpace();
+    const selectedId = requestedSpaceId || spaceStorage.get(data.user.id);
     const nextSpace = data.spaces?.find((space) => space.id === selectedId)
       || data.spaces?.find((space) => space.id === data.defaultSpaceId)
       || data.spaces?.[0]
       || null;
     setActiveSpaceIdState(nextSpace?.id || null);
+    if (nextSpace) spaceStorage.set(data.user.id, nextSpace.id);
     setApiSpace(nextSpace?.id);
     setFamily(nextSpace);
     return data;
@@ -71,6 +77,11 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     const refreshToken = sessionStorage.getRefresh();
+    try {
+      await disablePushNotifications();
+    } catch {
+      // Logging out must still work if notification cleanup is unavailable.
+    }
     try {
       await api.post('/auth/logout', { refreshToken });
     } catch {
@@ -101,3 +112,12 @@ export function AuthProvider({ children }) {
 }
 
 export const useAuth = () => useContext(AuthContext);
+
+function consumeNotificationSpace() {
+  const url = new URL(window.location.href);
+  const spaceId = url.searchParams.get('spaceId');
+  if (!spaceId) return null;
+  url.searchParams.delete('spaceId');
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  return spaceId;
+}

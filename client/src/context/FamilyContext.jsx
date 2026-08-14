@@ -150,6 +150,18 @@ export function FamilyProvider({ children }) {
     return undefined;
   }, [user, activeSpaceId, checkForChanges]);
 
+  useEffect(() => {
+    if (!user) return undefined;
+    const handlePush = (event) => {
+      const payload = event.detail;
+      notify(payload.body || 'Gia đình vừa có khoản chi mới.');
+      if (payload?.spaceId !== activeSpaceId) return;
+      checkForChanges().catch(() => {});
+    };
+    window.addEventListener('moneymate:push', handlePush);
+    return () => window.removeEventListener('moneymate:push', handlePush);
+  }, [user, activeSpaceId, checkForChanges, notify]);
+
   const scopedKey = useCallback((key) => `${activeSpaceId}:${key}`, [activeSpaceId]);
   const getCache = useCallback((key) => pageCache.current.get(scopedKey(key)), [scopedKey]);
   const setCache = useCallback((key, value) => {

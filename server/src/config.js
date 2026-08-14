@@ -20,6 +20,9 @@ export const config = {
   refreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret-change-me',
   accessTtl: process.env.ACCESS_TOKEN_TTL || '15m',
   refreshTtl: process.env.REFRESH_TOKEN_TTL || '7d',
+  vapidPublicKey: process.env.VAPID_PUBLIC_KEY || '',
+  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || '',
+  vapidSubject: process.env.VAPID_SUBJECT || 'mailto:admin@moneymate.vn',
   isProduction: process.env.NODE_ENV === 'production',
   previewAuthLinks: process.env.NODE_ENV !== 'production' || process.env.AUTH_LINK_MODE === 'preview',
 };

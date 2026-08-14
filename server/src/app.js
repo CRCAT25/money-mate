@@ -7,6 +7,7 @@ import budgetRoutes from './routes/budgets.js';
 import categoryRoutes from './routes/categories.js';
 import familyRoutes from './routes/family.js';
 import reportRoutes from './routes/reports.js';
+import pushRoutes from './routes/push.js';
 import transactionRoutes from './routes/transactions.js';
 import userRoutes from './routes/users.js';
 import spaceRoutes from './routes/spaces.js';
@@ -24,6 +25,7 @@ export function createApp() {
   app.use('/api/categories', categoryRoutes);
   app.use('/api/family', familyRoutes);
   app.use('/api/reports', reportRoutes);
+  app.use('/api/push', pushRoutes);
   app.use('/api/spaces', spaceRoutes);
   app.use('/api/transactions', transactionRoutes);
   app.use('/api/users', userRoutes);

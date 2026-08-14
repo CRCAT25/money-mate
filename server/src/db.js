@@ -263,6 +263,18 @@ async function migrate(db) {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      user_agent TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_transactions_family_date
       ON transactions(family_id, transaction_date DESC);
     CREATE INDEX IF NOT EXISTS idx_categories_family ON categories(family_id);
@@ -271,6 +283,8 @@ async function migrate(db) {
       ON budget_month_overrides(family_id, month);
     CREATE INDEX IF NOT EXISTS idx_budget_rules_family_effective
       ON budget_rules(family_id, effective_from);
+    CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user
+      ON push_subscriptions(user_id);
   `);
   await ensureFamilyColumns(db);
   await backfillPersonalSpaces(db);

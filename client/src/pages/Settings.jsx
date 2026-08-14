@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Copy, Grid2X2, ImagePlus, KeyRound, LoaderCircle, LogOut, RefreshCw, Save, Shield, Trash2, UserMinus, UserPlus, Users, X } from 'lucide-react';
+import { BellRing, Copy, Grid2X2, ImagePlus, KeyRound, LoaderCircle, LogOut, RefreshCw, Save, Shield, Trash2, UserMinus, UserPlus, Users, X } from 'lucide-react';
 import Avatar from '../components/ui/Avatar.jsx';
 import ConfirmModal from '../components/ui/ConfirmModal.jsx';
 import Modal from '../components/ui/Modal.jsx';
@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import api, { errorMessage } from '../utils/api.js';
+import { disablePushNotifications, enablePushNotifications, getPushNotificationState } from '../utils/pushNotifications.js';
 import { spaceStorage } from '../utils/storage.js';
 
 export default function Settings() {
@@ -24,12 +25,21 @@ export default function Settings() {
   const [verificationUrl, setVerificationUrl] = useState('');
   const [confirmation, setConfirmation] = useState(null);
   const [familySetupOpen, setFamilySetupOpen] = useState(false);
+  const [pushState, setPushState] = useState({ loading: true, supported: false, configured: false, permission: 'default', subscribed: false });
   const avatarInput = useRef(null);
   const familySpace = spaces.find((space) => space.type === 'family');
 
   useEffect(() => {
     if (familyDetails) setSpaceForm({ name: familyDetails.name, currency: familyDetails.currency, language: familyDetails.language });
   }, [familyDetails]);
+
+  useEffect(() => {
+    let current = true;
+    getPushNotificationState()
+      .then((state) => current && setPushState({ ...state, loading: false }))
+      .catch(() => current && setPushState((state) => ({ ...state, loading: false })));
+    return () => { current = false; };
+  }, [user.id]);
 
   if (loading) return <SettingsPageSkeleton />;
 
@@ -107,6 +117,24 @@ export default function Settings() {
     catch (error) { notify(errorMessage(error), 'error'); }
     finally { setSaving(''); }
   };
+  const togglePush = async () => {
+    if (pushState.loading || !pushState.supported || !pushState.configured) return;
+    setSaving('push');
+    try {
+      const data = pushState.subscribed
+        ? await disablePushNotifications()
+        : await enablePushNotifications();
+      notify(data.message);
+      const state = await getPushNotificationState();
+      setPushState({ ...state, loading: false });
+    } catch (error) {
+      notify(error.response ? errorMessage(error) : error.message, 'error');
+      const state = await getPushNotificationState().catch(() => pushState);
+      setPushState({ ...state, loading: false });
+    } finally {
+      setSaving('');
+    }
+  };
 
   return (
     <div className="space-y-5 sm:space-y-6">
@@ -129,6 +157,17 @@ export default function Settings() {
             <div className="grid gap-4 sm:grid-cols-2"><label className="block"><span className="label">Loại tiền</span><select className="field" value={spaceForm.currency} onChange={(e) => setSpaceForm({ ...spaceForm, currency: e.target.value })}><option>VND</option><option>USD</option><option>EUR</option></select></label><label className="block"><span className="label">Ngôn ngữ</span><select className="field" value={spaceForm.language} onChange={(e) => setSpaceForm({ ...spaceForm, language: e.target.value })}><option value="vi">Tiếng Việt</option><option value="en">English</option></select></label></div>
             <button className="primary-button" disabled={saving === 'space'}>{saving === 'space' ? <LoaderCircle className="size-5 animate-spin" /> : <Save className="size-4" />} Lưu thay đổi</button>
           </form>
+        </SettingsCard>
+
+        <SettingsCard eyebrow="Thiết bị" title="Thông báo gia đình" icon={BellRing}>
+          <div className="flex items-center gap-3 rounded-[16px] border border-ink/[0.06] bg-white/55 p-3.5">
+            <span className={`grid size-10 shrink-0 place-items-center rounded-xl ${pushState.subscribed ? 'bg-mint text-forest' : 'bg-ink/[0.05] text-ink/40'}`}><BellRing className="size-[18px]" /></span>
+            <div className="min-w-0 flex-1"><p className="text-sm font-medium text-ink">{pushState.subscribed ? 'Đang nhận thông báo' : 'Thông báo trên thiết bị này'}</p><p className="mt-1 text-xs leading-5 text-ink/48">{pushDescription(pushState)}</p></div>
+            <button type="button" role="switch" aria-checked={pushState.subscribed} aria-label="Bật thông báo gia đình" disabled={pushState.loading || saving === 'push' || !pushState.supported || !pushState.configured} onClick={togglePush} className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-45 ${pushState.subscribed ? 'bg-forest' : 'bg-ink/15'}`}>
+              <span className={`absolute top-1 grid size-5 place-items-center rounded-full bg-white shadow-sm transition-transform ${pushState.subscribed ? 'translate-x-6' : 'translate-x-1'}`}>{saving === 'push' && <LoaderCircle className="size-3 animate-spin text-forest" />}</span>
+            </button>
+          </div>
+          <p className="mt-3 text-xs leading-5 text-ink/45">MoneyMate chỉ thông báo khoản chi trong Gia đình và không gửi nội dung ghi chú. Người tạo giao dịch sẽ không nhận lại thông báo của chính mình.</p>
         </SettingsCard>
 
         {isPersonal ? (
@@ -163,4 +202,5 @@ function confirmationDescription(item, details) { if (item?.type === 'member') r
 
 function SettingsPageSkeleton() { return <div aria-label="Đang tải cài đặt" className="space-y-5" role="status"><Skeleton className="h-10 w-52 rounded-xl" /><div className="grid gap-4 xl:grid-cols-2">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-72 rounded-[18px]" />)}</div></div>; }
 function SettingsCard({ eyebrow, title, icon: Icon, children }) { return <section className="rounded-[18px] border border-ink/[0.06] bg-paper/85 p-4 shadow-card sm:p-5"><div className="mb-5 flex items-start justify-between"><div><p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.13em] text-ink/48">{eyebrow}</p><h2 className="font-editorial text-[21px] font-semibold text-ink">{title}</h2></div><span className="grid size-10 place-items-center rounded-xl bg-mint text-forest"><Icon className="size-[18px]" /></span></div>{children}</section>; }
+function pushDescription(state) { if (state.loading) return 'Đang kiểm tra trạng thái thông báo…'; if (!state.supported) return 'Hãy cài MoneyMate vào màn hình chính để nhận thông báo trên thiết bị này.'; if (!state.configured) return 'Máy chủ chưa được cấu hình để gửi thông báo.'; if (state.permission === 'denied') return 'Thông báo đang bị chặn trong cài đặt của thiết bị.'; if (state.subscribed) return 'Bạn sẽ biết ngay khi thành viên khác thêm một khoản chi.'; return 'Bật để nhận thông báo kể cả khi MoneyMate đang đóng.'; }
 function resizeAvatar(file) { return new Promise((resolve, reject) => { const image = new Image(); const objectUrl = URL.createObjectURL(file); image.onload = () => { const canvas = document.createElement('canvas'); const size = 256; canvas.width = size; canvas.height = size; const context = canvas.getContext('2d'); const sourceSize = Math.min(image.naturalWidth, image.naturalHeight); context.drawImage(image, (image.naturalWidth - sourceSize) / 2, (image.naturalHeight - sourceSize) / 2, sourceSize, sourceSize, 0, 0, size, size); URL.revokeObjectURL(objectUrl); resolve(canvas.toDataURL('image/webp', 0.82)); }; image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Invalid image')); }; image.src = objectUrl; }); }

@@ -6,6 +6,9 @@ process.env.DATABASE_PATH = ':memory:';
 process.env.JWT_ACCESS_SECRET = 'test-access-secret';
 process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
 process.env.CLIENT_URL = 'http://localhost:5173';
+process.env.VAPID_PUBLIC_KEY = 'BFhokV6XJhdLaLVS9_mPMD2mGbILghzufVL-zwdRUmv1VBOz5BIJPx9CBgMVzBtpHX2Vi6IEjU-bl9no1w3iJdk';
+process.env.VAPID_PRIVATE_KEY = 'MyUf1QJ1XZdGf_iD4J4dzeWqsB2dWEUaSFFWyDgucsc';
+process.env.VAPID_SUBJECT = 'mailto:test@moneymate.vn';
 
 const { createApp } = await import('../src/app.js');
 const { closeDb } = await import('../src/db.js');
@@ -43,6 +46,17 @@ test('family owner can register, verify, login and record a transaction', async 
   assert.ok(login.body.refreshToken);
 
   const auth = { Authorization: `Bearer ${login.body.accessToken}` };
+  const pushConfig = await request(app).get('/api/push/config').set(auth).expect(200);
+  assert.equal(pushConfig.body.enabled, true);
+  assert.equal(pushConfig.body.publicKey, process.env.VAPID_PUBLIC_KEY);
+  const pushSubscription = {
+    endpoint: 'https://push.example.com/moneymate-test-device',
+    keys: { p256dh: 'test-device-public-key-material', auth: 'test-device-auth' },
+  };
+  await request(app).post('/api/push/subscriptions').set(auth).send(pushSubscription).expect(201);
+  await request(app).post('/api/push/subscriptions').set(auth).send(pushSubscription).expect(201);
+  await request(app).delete('/api/push/subscriptions').set(auth).send({ endpoint: pushSubscription.endpoint }).expect(204);
+
   const categories = await request(app).get('/api/categories').set(auth).expect(200);
   assert.equal(categories.body.length, 14);
   const food = categories.body.find((category) => category.name === 'Ăn uống' && category.type === 'expense');

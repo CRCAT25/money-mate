@@ -11,12 +11,13 @@ MoneyMate là web app quản lý tài chính chung cho hai thành viên trong gi
 - Quản lý danh mục dùng chung với biểu tượng, màu sắc và bảo vệ lịch sử giao dịch.
 - Báo cáo tháng, biểu đồ xu hướng 6 tháng, lọc theo thành viên/danh mục và xuất CSV.
 - Quản lý tên, email có xác nhận lại, ảnh đại diện, thành viên, loại tiền, ngôn ngữ, mật khẩu và tài khoản.
-- Đồng bộ bằng Socket.IO khi chạy local và polling 5 giây trên Vercel serverless.
+- Gửi Web Push khi thành viên khác thêm khoản chi trong không gian Gia đình.
+- Đồng bộ bằng Socket.IO khi chạy local và revision cache khi chạy trên Vercel serverless.
 
 ## Công nghệ
 
 - Frontend: React 19, Vite, Tailwind CSS, Recharts, Lucide, Axios.
-- Backend: Node.js, Express, SQLite local, PostgreSQL/Neon production, JWT, bcrypt, Socket.IO.
+- Backend: Node.js, Express, SQLite local, PostgreSQL/Neon production, JWT, bcrypt, Socket.IO, Web Push.
 - Kiểm thử API: Node test runner và Supertest.
 
 ## Chạy cục bộ
@@ -75,13 +76,15 @@ Project đã có `vercel.json` để deploy frontend và Express API chung một
 https://moneymate-theta.vercel.app
 ```
 
-Vercel project dùng Neon PostgreSQL thông qua `DATABASE_URL`. Các biến bắt buộc khác gồm `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` và `AUTH_LINK_MODE`. Chạy deploy mới bằng:
+Vercel project dùng Neon PostgreSQL thông qua `DATABASE_URL`. Các biến bắt buộc khác gồm `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `AUTH_LINK_MODE`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` và `VAPID_SUBJECT`. Chạy deploy mới bằng:
 
 ```bash
 vercel deploy --prod
 ```
 
-SQLite vẫn được dùng mặc định khi phát triển local. Khi `DATABASE_URL` tồn tại, backend tự chuyển sang PostgreSQL và tự chạy schema migration. Vercel không hỗ trợ Socket.IO lâu dài nên client tự dùng polling 5 giây trên production.
+SQLite vẫn được dùng mặc định khi phát triển local. Khi `DATABASE_URL` tồn tại, backend tự chuyển sang PostgreSQL và tự chạy schema migration. Vercel không hỗ trợ Socket.IO lâu dài nên client kiểm tra revision khi chuyển trang hoặc sau hoạt động API; Web Push đảm nhiệm thông báo khoản chi khi app chạy nền hoặc đã đóng.
+
+Trên iPhone/iPad, người dùng cần thêm MoneyMate vào màn hình chính rồi bật thông báo trong Hồ sơ. Android và desktop có thể cấp quyền trực tiếp từ trình duyệt hỗ trợ Web Push.
 
 ## Ghi chú bảo mật
 
