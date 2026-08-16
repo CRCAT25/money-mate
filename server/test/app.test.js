@@ -326,11 +326,27 @@ test('category and transaction CRUD preserve family data rules', async () => {
     .set(auth)
     .send({ name: 'Thú cưng', type: 'expense', icon: 'PawPrint', color: '#4A8F8B' })
     .expect(201);
+  const fundAfterCategoryCreate = await request(app).get('/api/fund').set(auth).expect(200);
+  const linkedPocket = fundAfterCategoryCreate.body.pockets.find(
+    (pocket) => pocket.category?.id === createdCategory.body.id,
+  );
+  assert.equal(linkedPocket.name, 'Thú cưng');
+  assert.equal(linkedPocket.category.icon, 'PawPrint');
+  assert.equal(linkedPocket.category.color, '#4A8F8B');
+
   await request(app)
     .patch(`/api/categories/${createdCategory.body.id}`)
     .set(auth)
     .send({ name: 'Chăm thú cưng', icon: 'HeartPulse', color: '#E56B78' })
     .expect(200);
+  const fundAfterCategoryUpdate = await request(app).get('/api/fund').set(auth).expect(200);
+  const updatedLinkedPocket = fundAfterCategoryUpdate.body.pockets.find(
+    (pocket) => pocket.category?.id === createdCategory.body.id,
+  );
+  assert.equal(updatedLinkedPocket.id, linkedPocket.id);
+  assert.equal(updatedLinkedPocket.name, 'Chăm thú cưng');
+  assert.equal(updatedLinkedPocket.category.icon, 'HeartPulse');
+  assert.equal(updatedLinkedPocket.category.color, '#E56B78');
 
   const createdTransaction = await request(app)
     .post('/api/transactions')
@@ -365,6 +381,164 @@ test('category and transaction CRUD preserve family data rules', async () => {
 
   await request(app).delete(`/api/transactions/${createdTransaction.body.id}`).set(auth).expect(204);
   await request(app).delete(`/api/categories/${createdCategory.body.id}`).set(auth).expect(204);
+  const fundAfterCategoryDelete = await request(app).get('/api/fund').set(auth).expect(200);
+  const detachedPocket = fundAfterCategoryDelete.body.pockets.find((pocket) => pocket.id === linkedPocket.id);
+  assert.equal(detachedPocket.name, 'Chăm thú cưng');
+  assert.equal(detachedPocket.category, null);
+});
+
+test('family fund tracks member contributions and fund-paid expenses independently from income', async () => {
+  const ownerRegistration = await request(app).post('/api/auth/register').send({
+    displayName: 'Hồng Vân', email: 'fund-owner@example.com',
+    password: 'FundOwner123!', mode: 'create', familyName: 'Gia đình Quỹ',
+  }).expect(201);
+  const ownerToken = new URL(ownerRegistration.body.previewVerificationUrl).searchParams.get('token');
+  await request(app).post('/api/auth/verify-email').send({ token: ownerToken }).expect(200);
+  const ownerLogin = await request(app).post('/api/auth/login')
+    .send({ email: 'fund-owner@example.com', password: 'FundOwner123!' }).expect(200);
+  const ownerAuth = { Authorization: `Bearer ${ownerLogin.body.accessToken}` };
+  const initialFamily = await request(app).get('/api/family').set(ownerAuth).expect(200);
+
+  const partnerRegistration = await request(app).post('/api/auth/register').send({
+    displayName: 'Quốc Thành', email: 'fund-partner@example.com',
+    password: 'FundPartner123!', mode: 'join', inviteCode: initialFamily.body.inviteCode,
+  }).expect(201);
+  const partnerToken = new URL(partnerRegistration.body.previewVerificationUrl).searchParams.get('token');
+  await request(app).post('/api/auth/verify-email').send({ token: partnerToken }).expect(200);
+  const partnerLogin = await request(app).post('/api/auth/login')
+    .send({ email: 'fund-partner@example.com', password: 'FundPartner123!' }).expect(200);
+  const family = await request(app).get('/api/family').set(ownerAuth).expect(200);
+  const owner = family.body.members.find((member) => member.email === 'fund-owner@example.com');
+  const partner = family.body.members.find((member) => member.email === 'fund-partner@example.com');
+
+  const outsiderRegistration = await request(app).post('/api/auth/register').send({
+    displayName: 'Người ngoài', email: 'fund-outsider@example.com',
+    password: 'FundOutsider123!', mode: 'personal',
+  }).expect(201);
+  const outsiderToken = new URL(outsiderRegistration.body.previewVerificationUrl).searchParams.get('token');
+  await request(app).post('/api/auth/verify-email').send({ token: outsiderToken }).expect(200);
+  const outsiderLogin = await request(app).post('/api/auth/login')
+    .send({ email: 'fund-outsider@example.com', password: 'FundOutsider123!' }).expect(200);
+
+  const initialFund = await request(app).get('/api/fund').set(ownerAuth).expect(200);
+  const expenseCategories = await request(app).get('/api/categories').set(ownerAuth).expect(200);
+  const expenseCategoryNames = expenseCategories.body.filter((category) => category.type === 'expense').map((category) => category.name).sort();
+  const linkedFundNames = initialFund.body.pockets.filter((pocket) => pocket.category).map((pocket) => pocket.name).sort();
+  assert.deepEqual(linkedFundNames, expenseCategoryNames);
+  const defaultPocket = initialFund.body.pockets.find((pocket) => pocket.name === 'Quỹ chung');
+  assert.ok(defaultPocket);
+  const createdPocket = await request(app).post('/api/fund/pockets').set(ownerAuth).send({
+    name: 'Tiền mặt', color: '#D47A61',
+  }).expect(201);
+  const cashPocketId = createdPocket.body.pocket.id;
+
+  await request(app).post('/api/fund/contributions').set(ownerAuth).send({
+    contributionDate: '2026-08-15',
+    pocketId: cashPocketId,
+    note: 'Bỏ tiền vào quỹ',
+    contributions: [
+      { userId: owner.id, amount: 500000 },
+      { userId: partner.id, amount: 500000 },
+    ],
+  }).expect(201);
+
+  const fund = await request(app).get('/api/fund').set(ownerAuth).expect(200);
+  assert.equal(fund.body.totalContributed, 1000000);
+  assert.equal(fund.body.totalSpent, 0);
+  assert.equal(fund.body.balance, 1000000);
+  assert.equal(fund.body.pockets.find((pocket) => pocket.id === cashPocketId).balance, 1000000);
+  assert.equal(fund.body.pockets.find((pocket) => pocket.name === 'Quỹ chung').balance, 0);
+  assert.equal(fund.body.members.find((member) => member.id === owner.id).contributed, 500000);
+  assert.equal(fund.body.members.find((member) => member.id === partner.id).contributed, 500000);
+
+  const beforeExpense = await request(app).get('/api/reports/summary?month=2026-08').set(ownerAuth).expect(200);
+  assert.equal(beforeExpense.body.income, 0);
+  assert.equal(beforeExpense.body.expense, 0);
+
+  const categories = await request(app).get('/api/categories').set(ownerAuth).expect(200);
+  const food = categories.body.find((category) => category.name === 'Ăn uống' && category.type === 'expense');
+  const fundedExpense = await request(app).post('/api/transactions').set(ownerAuth).send({
+    type: 'expense', amount: 300000, categoryId: food.id,
+    transactionDate: '2026-08-15', note: 'Chi từ quỹ', paidFromFund: true, fundPocketId: cashPocketId,
+  }).expect(201);
+  const transaction = await request(app).get(`/api/transactions/${fundedExpense.body.id}`).set(ownerAuth).expect(200);
+  assert.equal(transaction.body.paidFromFund, true);
+  assert.equal(transaction.body.fundPocket.id, cashPocketId);
+
+  const afterExpense = await request(app).get('/api/fund?month=2026-08').set(ownerAuth).expect(200);
+  assert.equal(afterExpense.body.totalSpent, 300000);
+  assert.equal(afterExpense.body.balance, 700000);
+  assert.deepEqual(afterExpense.body.dailyActivity, [{
+    date: '2026-08-15', contributed: 1000000, spent: 300000,
+  }]);
+  await request(app).post('/api/transactions').set(ownerAuth).send({
+    type: 'expense', amount: 1, categoryId: food.id,
+    transactionDate: '2026-08-15', paidFromFund: true, fundPocketId: defaultPocket.id,
+  }).expect(422);
+  const report = await request(app).get('/api/reports/summary?month=2026-08').set(ownerAuth).expect(200);
+  assert.equal(report.body.income, 0);
+  assert.equal(report.body.expense, 300000);
+
+  await request(app).patch(`/api/transactions/${fundedExpense.body.id}`).set(ownerAuth).send({
+    type: 'expense', amount: 700000, categoryId: food.id,
+    transactionDate: '2026-08-15', note: 'Điều chỉnh chi từ quỹ', paidFromFund: true, fundPocketId: cashPocketId,
+  }).expect(200);
+  const afterEdit = await request(app).get('/api/fund').set(ownerAuth).expect(200);
+  assert.equal(afterEdit.body.balance, 300000);
+  await request(app).patch(`/api/transactions/${fundedExpense.body.id}`).set(ownerAuth).send({
+    type: 'expense', amount: 300000, categoryId: food.id,
+    transactionDate: '2026-08-15', note: 'Chi từ quỹ', paidFromFund: true, fundPocketId: cashPocketId,
+  }).expect(200);
+
+  await request(app).post('/api/transactions').set(ownerAuth).send({
+    type: 'expense', amount: 700001, categoryId: food.id,
+    transactionDate: '2026-08-15', paidFromFund: true, fundPocketId: cashPocketId,
+  }).expect(422);
+  await request(app).post('/api/fund/contributions').set(ownerAuth).send({
+    contributionDate: '2026-08-15',
+    pocketId: cashPocketId,
+    contributions: [{ userId: outsiderLogin.body.user.id, amount: 100000 }],
+  }).expect(422);
+
+  const housePocket = await request(app).post('/api/fund/pockets').set(ownerAuth).send({
+    name: 'Tiền nhà', color: '#4B83A6',
+  }).expect(201);
+  await request(app).post(`/api/fund/pockets/${housePocket.body.pocket.id}/target`).set(ownerAuth).send({
+    monthlyTarget: 10000000,
+    members: [
+      { userId: owner.id, amount: 5000000 },
+      { userId: partner.id, amount: 5000000 },
+    ],
+  }).expect(200);
+  await request(app).post('/api/fund/contributions').set(ownerAuth).send({
+    contributionDate: '2026-08-15',
+    pocketId: housePocket.body.pocket.id,
+    contributions: [{ userId: owner.id, amount: 3000000 }],
+  }).expect(201);
+  const augustTracking = await request(app).get('/api/fund?month=2026-08').set(ownerAuth).expect(200);
+  const houseInAugust = augustTracking.body.pockets.find((pocket) => pocket.id === housePocket.body.pocket.id);
+  assert.equal(houseInAugust.monthlyTarget, 10000000);
+  assert.equal(houseInAugust.monthlyContributed, 3000000);
+  assert.equal(houseInAugust.monthlyRemaining, 7000000);
+  assert.equal(houseInAugust.memberTargets.find((member) => member.id === owner.id).remaining, 2000000);
+  assert.equal(houseInAugust.memberTargets.find((member) => member.id === partner.id).remaining, 5000000);
+  const septemberTracking = await request(app).get('/api/fund?month=2026-09').set(ownerAuth).expect(200);
+  const houseInSeptember = septemberTracking.body.pockets.find((pocket) => pocket.id === housePocket.body.pocket.id);
+  assert.equal(houseInSeptember.monthlyContributed, 0);
+  assert.equal(houseInSeptember.monthlyRemaining, 10000000);
+  assert.equal(houseInSeptember.memberTargets.find((member) => member.id === owner.id).remaining, 5000000);
+
+  const personal = ownerLogin.body.spaces.find((space) => space.type === 'personal');
+  const personalAuth = { ...ownerAuth, 'X-MoneyMate-Space-Id': personal.id };
+  await request(app).get('/api/fund').set(personalAuth).expect(422);
+  const personalCategories = await request(app).get('/api/categories').set(personalAuth).expect(200);
+  const personalExpense = personalCategories.body.find((category) => category.type === 'expense');
+  await request(app).post('/api/transactions').set(personalAuth).send({
+    type: 'expense', amount: 10000, categoryId: personalExpense.id,
+    transactionDate: '2026-08-15', paidFromFund: true,
+  }).expect(422);
+
+  assert.equal(partnerLogin.body.spaces.some((space) => space.type === 'family'), true);
 });
 
 test('monthly spending plans are shared and track actual expenses', async () => {

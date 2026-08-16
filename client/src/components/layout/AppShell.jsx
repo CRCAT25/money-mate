@@ -50,6 +50,7 @@ export default function AppShell({ children }) {
     const preloadMenuPages = () => Promise.allSettled([
       import('../../pages/Home.jsx'),
       import('../../pages/Plans.jsx'),
+      import('../../pages/FundPlans.jsx'),
       import('../../pages/TransactionForm.jsx'),
       import('../../pages/Reports.jsx'),
       import('../../pages/Settings.jsx'),
@@ -81,7 +82,7 @@ export default function AppShell({ children }) {
               to={to}
               end={to === '/'}
               className={({ isActive }) => `flex min-h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-bold transition active:scale-[0.99] ${
-                isActive || (primary && location.pathname.includes('/transactions/'))
+                isActive || (to === '/plans' && location.pathname === '/fund-plans') || (primary && location.pathname.includes('/transactions/'))
                   ? 'bg-white text-ink shadow-lg'
                   : 'text-white/58 hover:bg-white/[0.08] hover:text-white'
               }`}
@@ -138,7 +139,7 @@ export default function AppShell({ children }) {
                   touchNavigation.current = null;
                 }
               }}
-              className={({ isActive }) => `relative z-10 flex h-full min-h-[58px] min-w-0 touch-manipulation select-none flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive ? 'text-forest' : 'text-ink/42'}`}
+              className={({ isActive }) => `relative z-10 flex h-full min-h-[58px] min-w-0 touch-manipulation select-none flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${isActive || (to === '/plans' && location.pathname === '/fund-plans') ? 'text-forest' : 'text-ink/42'}`}
             >
               {({ isActive }) => (
                 <>
@@ -147,8 +148,8 @@ export default function AppShell({ children }) {
                       <Icon className="size-[23px]" strokeWidth={2.35} />
                     </span>
                   ) : (
-                    <span className={`pointer-events-none grid size-9 place-items-center rounded-[12px] transition-colors ${isActive ? 'bg-forest/[0.09]' : 'bg-transparent'}`}>
-                      <Icon className="size-[20px]" strokeWidth={isActive ? 2.25 : 1.9} />
+                    <span className={`pointer-events-none grid size-9 place-items-center rounded-[12px] transition-colors ${isActive || (to === '/plans' && location.pathname === '/fund-plans') ? 'bg-forest/[0.09]' : 'bg-transparent'}`}>
+                      <Icon className="size-[20px]" strokeWidth={isActive || (to === '/plans' && location.pathname === '/fund-plans') ? 2.25 : 1.9} />
                     </span>
                   )}
                   <span className={`pointer-events-none max-w-full truncate leading-none ${primary ? 'text-ink/42' : ''}`}>{mobile}</span>

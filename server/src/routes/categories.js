@@ -2,6 +2,7 @@ import express from 'express';
 import { body, param } from 'express-validator';
 import { authenticate } from '../auth.js';
 import { getDb } from '../db.js';
+import { ensureExpenseFundPockets } from '../fund.js';
 import { emitFamily } from '../realtime.js';
 import { bumpFamilyRevision } from '../revisions.js';
 import { id } from '../utils.js';
@@ -39,6 +40,7 @@ router.post(
         INSERT INTO categories (id, family_id, name, type, icon, color)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(category.id, req.space.id, category.name.trim(), category.type, category.icon, category.color);
+      if (req.space.type === 'family' && category.type === 'expense') await ensureExpenseFundPockets(getDb(), req.space.id);
       await bumpFamilyRevision(getDb(), req.space.id, { base: true, transactions: true });
       emitFamily(req.space.id, 'categories:changed');
       res.status(201).json({ ...category, isDefault: false, transactionCount: 0 });
@@ -65,6 +67,7 @@ router.patch(
         WHERE id = ? AND family_id = ?
       `).run(req.body.name.trim(), req.body.icon, req.body.color, req.params.id, req.space.id);
       if (!result.changes) return res.status(404).json({ message: 'Không tìm thấy danh mục.' });
+      if (req.space.type === 'family') await ensureExpenseFundPockets(getDb(), req.space.id);
       await bumpFamilyRevision(getDb(), req.space.id, { base: true, transactions: true });
       emitFamily(req.space.id, 'categories:changed');
       res.json({ message: 'Đã cập nhật danh mục.' });
@@ -85,7 +88,10 @@ router.delete('/:id', [param('id').isUUID()], validate, async (req, res) => {
   if (Number(category.transaction_count) > 0) {
     return res.status(409).json({ message: `Danh mục đang có ${category.transaction_count} giao dịch và chưa thể xóa.` });
   }
-  await db.prepare('DELETE FROM categories WHERE id = ?').run(category.id);
+  await db.transaction(async (transaction) => {
+    await transaction.prepare('UPDATE fund_pockets SET category_id = NULL WHERE category_id = ? AND family_id = ?').run(category.id, req.space.id);
+    await transaction.prepare('DELETE FROM categories WHERE id = ?').run(category.id);
+  });
   await bumpFamilyRevision(db, req.space.id, { base: true, transactions: true });
   emitFamily(req.space.id, 'categories:changed');
   res.status(204).end();

@@ -194,15 +194,25 @@ export function FamilyProvider({ children }) {
     return request;
   }, [revision, scopedKey]);
 
+  const loadFund = useCallback((month) => {
+    if (activeSpace?.type !== 'family') return Promise.resolve(null);
+    const requestedMonth = /^\d{4}-\d{2}$/.test(month || '') ? month : new Date().toISOString().slice(0, 7);
+    return loadCache(`fund:${requestedMonth}`, async () => {
+      const { data } = await api.get('/fund', { params: { month: requestedMonth } });
+      return { data };
+    });
+  }, [activeSpace?.type, loadCache]);
+
   const prefetchPages = useCallback((months) => {
     const requestedMonths = [...new Set((Array.isArray(months) ? months : [months]).filter((month) => /^\d{4}-\d{2}$/.test(month)))];
     const requests = requestedMonths.flatMap((month) => {
       const homeRequest = loadCache(`home:${month}`, async () => {
-        const [summaryResponse, transactionResponse] = await Promise.all([
+        const [summaryResponse, transactionResponse, fundEntry] = await Promise.all([
           api.get('/reports/summary', { params: { month } }),
           api.get('/transactions', { params: { month, limit: 200 } }),
+          loadFund(month),
         ]);
-        return { summary: summaryResponse.data, transactions: transactionResponse.data };
+        return { summary: summaryResponse.data, transactions: transactionResponse.data, fund: fundEntry?.data || null };
       });
       const plansRequest = loadCache(`plans:${month}`, async () => {
         const { data } = await api.get('/budgets', { params: { month } });
@@ -224,7 +234,7 @@ export function FamilyProvider({ children }) {
       return [homeRequest, plansRequest, reportsRequest];
     });
     return Promise.allSettled(requests);
-  }, [loadCache]);
+  }, [loadCache, loadFund]);
 
   const touch = useCallback((kind = 'transactions') => {
     if (kind === 'base') pendingLocalBaseChanges.current += 1;
@@ -233,8 +243,8 @@ export function FamilyProvider({ children }) {
     return bumpRevision();
   }, [invalidatePageCache, bumpRevision]);
   const value = useMemo(
-    () => ({ familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache, loadCache, prefetchPages, activeSpace, isPersonal: activeSpace?.type === 'personal' }),
-    [familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache, loadCache, prefetchPages, activeSpace],
+    () => ({ familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache, loadCache, loadFund, prefetchPages, activeSpace, isPersonal: activeSpace?.type === 'personal' }),
+    [familyDetails, categories, revision, loading, reloadBaseData, touch, getCache, setCache, loadCache, loadFund, prefetchPages, activeSpace],
   );
   return <FamilyContext.Provider value={value}>{children}</FamilyContext.Provider>;
 }

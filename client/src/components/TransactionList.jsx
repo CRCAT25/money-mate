@@ -169,11 +169,13 @@ function TransactionRow({ transaction, currency, compact, showTime, showMember, 
             <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-normal leading-4 text-ink/42" title={transaction.assignedTo.displayName}>
               <span className="shrink-0">{formatTransactionTime(transaction.createdAt)}</span>
               {showMember && <><span className="size-0.5 shrink-0 rounded-full bg-ink/25" /><Avatar user={transaction.assignedTo} size="xs" /><span className="truncate">{shortDisplayName(transaction.assignedTo.displayName)}</span></>}
+              {transaction.fundPocket && <><span className="size-0.5 shrink-0 rounded-full bg-ink/25" /><span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: transaction.fundPocket.color }} /><span className="truncate">{transaction.fundPocket.name}</span></>}
             </div>
           ) : (
             <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-semibold text-ink/40" title={transaction.assignedTo.displayName}>
               <span className="shrink-0">{formatShortDate(transaction.transactionDate)}</span>
               {showMember && <><span className="size-0.5 shrink-0 rounded-full bg-ink/25" /><Avatar user={transaction.assignedTo} size="xs" /><span className="truncate">{transaction.assignedTo.displayName}</span></>}
+              {transaction.fundPocket && <><span className="size-0.5 shrink-0 rounded-full bg-ink/25" /><span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: transaction.fundPocket.color }} /><span className="truncate">{transaction.fundPocket.name}</span></>}
             </div>
           )}
         </div>

@@ -12,6 +12,7 @@ const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword.jsx'));
 const ResetPassword = lazy(() => import('./pages/auth/ResetPassword.jsx'));
 const Home = lazy(() => import('./pages/Home.jsx'));
 const Plans = lazy(() => import('./pages/Plans.jsx'));
+const FundPlans = lazy(() => import('./pages/FundPlans.jsx'));
 const TransactionForm = lazy(() => import('./pages/TransactionForm.jsx'));
 const Categories = lazy(() => import('./pages/Categories.jsx'));
 const Reports = lazy(() => import('./pages/Reports.jsx'));
@@ -24,6 +25,7 @@ function ProtectedRoute() {
     const preload = () => {
       void Promise.allSettled([
         import('./pages/Plans.jsx'),
+        import('./pages/FundPlans.jsx'),
         import('./pages/TransactionForm.jsx'),
         import('./pages/Categories.jsx'),
         import('./pages/Reports.jsx'),
@@ -171,6 +173,7 @@ export default function App() {
             <Route element={<ProtectedRoute />}>
               <Route index element={<Home />} />
               <Route path="plans" element={<Plans />} />
+              <Route path="fund-plans" element={<FundPlans />} />
               <Route path="add" element={<TransactionForm />} />
               <Route path="transactions/:id/edit" element={<TransactionForm />} />
               <Route path="categories" element={<Categories />} />

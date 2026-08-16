@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CalendarCheck, CalendarRange, Check, LoaderCircle, Pencil, X } from 'lucide-react';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
+import PlanModeTabs from '../components/plans/PlanModeTabs.jsx';
 import Modal from '../components/ui/Modal.jsx';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import Skeleton from '../components/ui/Skeleton.jsx';
@@ -14,7 +15,7 @@ const emptyPlan = { month: '', planned: 0, spent: 0, remaining: 0, percentage: 0
 
 export default function Plans() {
   const { family } = useAuth();
-  const { touch, getCache, setCache, loadCache, prefetchPages } = useFamilyData();
+  const { touch, getCache, setCache, loadCache, prefetchPages, isPersonal } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
   const initialPlanCache = getCache(`plans:${month}`);
@@ -147,6 +148,8 @@ export default function Plans() {
           {saving ? <LoaderCircle className="size-[18px] animate-spin" /> : editing ? <Check className="size-[19px]" strokeWidth={2.5} /> : <Pencil className="size-[16px]" strokeWidth={2.1} />}
         </button>
       </header>
+
+      {!editing && <PlanModeTabs showFund={!isPersonal} />}
 
       <div>
         <MonthPicker value={month} onChange={setMonth} dense fullWidth variant="budget" />

@@ -180,6 +180,30 @@ async function migrate(db) {
       FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS fund_pockets (
+      id TEXT PRIMARY KEY,
+      family_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#3D7060',
+      is_default INTEGER NOT NULL DEFAULT 0,
+      monthly_target ${amountType} NOT NULL DEFAULT 0 CHECK(monthly_target >= 0),
+      category_id TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(family_id, name),
+      FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS fund_pocket_member_targets (
+      pocket_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      target_amount ${amountType} NOT NULL CHECK(target_amount >= 0),
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (pocket_id, user_id),
+      FOREIGN KEY (pocket_id) REFERENCES fund_pockets(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
       family_id TEXT NOT NULL,
@@ -188,6 +212,8 @@ async function migrate(db) {
       assigned_to TEXT NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('expense', 'income')),
       amount ${amountType} NOT NULL CHECK(amount > 0),
+      paid_from_fund INTEGER NOT NULL DEFAULT 0,
+      fund_pocket_id TEXT,
       transaction_date TEXT NOT NULL,
       note TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -195,7 +221,26 @@ async function migrate(db) {
       FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
       FOREIGN KEY (category_id) REFERENCES categories(id),
       FOREIGN KEY (created_by) REFERENCES users(id),
-      FOREIGN KEY (assigned_to) REFERENCES users(id)
+      FOREIGN KEY (assigned_to) REFERENCES users(id),
+      FOREIGN KEY (fund_pocket_id) REFERENCES fund_pockets(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS fund_contributions (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      family_id TEXT NOT NULL,
+      fund_pocket_id TEXT,
+      contributor_user_id TEXT,
+      contributor_name TEXT NOT NULL,
+      amount ${amountType} NOT NULL CHECK(amount > 0),
+      contribution_date TEXT NOT NULL,
+      note TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+      FOREIGN KEY (fund_pocket_id) REFERENCES fund_pockets(id),
+      FOREIGN KEY (contributor_user_id) REFERENCES users(id) ON DELETE SET NULL,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS budgets (
@@ -277,6 +322,14 @@ async function migrate(db) {
 
     CREATE INDEX IF NOT EXISTS idx_transactions_family_date
       ON transactions(family_id, transaction_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_fund_contributions_family_date
+      ON fund_contributions(family_id, contribution_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_fund_contributions_batch
+      ON fund_contributions(batch_id);
+    CREATE INDEX IF NOT EXISTS idx_fund_pockets_family
+      ON fund_pockets(family_id);
+    CREATE INDEX IF NOT EXISTS idx_fund_member_targets_pocket
+      ON fund_pocket_member_targets(pocket_id);
     CREATE INDEX IF NOT EXISTS idx_categories_family ON categories(family_id);
     CREATE INDEX IF NOT EXISTS idx_budgets_family_month ON budgets(family_id, month);
     CREATE INDEX IF NOT EXISTS idx_budget_overrides_family_month
@@ -287,6 +340,10 @@ async function migrate(db) {
       ON push_subscriptions(user_id);
   `);
   await ensureFamilyColumns(db);
+  await ensureFundPocketColumns(db);
+  await ensureTransactionColumns(db);
+  await ensureFundContributionColumns(db);
+  await backfillFundPockets(db);
   await backfillPersonalSpaces(db);
 }
 
@@ -315,6 +372,69 @@ async function ensureFamilyColumns(db) {
     db.sqlite.exec('ALTER TABLE families ADD COLUMN owner_user_id TEXT');
   }
   db.sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_families_personal_owner ON families(owner_user_id) WHERE space_type = 'personal'");
+}
+
+async function ensureTransactionColumns(db) {
+  if (db.kind === 'postgres') {
+    await db.sql.unsafe('ALTER TABLE transactions ADD COLUMN IF NOT EXISTS paid_from_fund INTEGER NOT NULL DEFAULT 0');
+    await db.sql.unsafe('ALTER TABLE transactions ADD COLUMN IF NOT EXISTS fund_pocket_id TEXT');
+    return;
+  }
+
+  const columns = db.sqlite.prepare('PRAGMA table_info(transactions)').all();
+  const names = new Set(columns.map((column) => column.column_name || column.name));
+  if (!names.has('paid_from_fund')) {
+    db.sqlite.exec('ALTER TABLE transactions ADD COLUMN paid_from_fund INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!names.has('fund_pocket_id')) {
+    db.sqlite.exec('ALTER TABLE transactions ADD COLUMN fund_pocket_id TEXT');
+  }
+}
+
+async function ensureFundPocketColumns(db) {
+  if (db.kind === 'postgres') {
+    await db.sql.unsafe('ALTER TABLE fund_pockets ADD COLUMN IF NOT EXISTS monthly_target BIGINT NOT NULL DEFAULT 0');
+    await db.sql.unsafe('ALTER TABLE fund_pockets ADD COLUMN IF NOT EXISTS category_id TEXT');
+    await db.sql.unsafe('CREATE UNIQUE INDEX IF NOT EXISTS idx_fund_pockets_family_category ON fund_pockets(family_id, category_id) WHERE category_id IS NOT NULL');
+    return;
+  }
+
+  const columns = db.sqlite.prepare('PRAGMA table_info(fund_pockets)').all();
+  const names = new Set(columns.map((column) => column.column_name || column.name));
+  if (!names.has('monthly_target')) {
+    db.sqlite.exec('ALTER TABLE fund_pockets ADD COLUMN monthly_target INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!names.has('category_id')) {
+    db.sqlite.exec('ALTER TABLE fund_pockets ADD COLUMN category_id TEXT');
+  }
+  db.sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_fund_pockets_family_category ON fund_pockets(family_id, category_id) WHERE category_id IS NOT NULL');
+}
+
+async function ensureFundContributionColumns(db) {
+  if (db.kind === 'postgres') {
+    await db.sql.unsafe('ALTER TABLE fund_contributions ADD COLUMN IF NOT EXISTS fund_pocket_id TEXT');
+    return;
+  }
+
+  const columns = db.sqlite.prepare('PRAGMA table_info(fund_contributions)').all();
+  const names = new Set(columns.map((column) => column.column_name || column.name));
+  if (!names.has('fund_pocket_id')) {
+    db.sqlite.exec('ALTER TABLE fund_contributions ADD COLUMN fund_pocket_id TEXT');
+  }
+}
+
+async function backfillFundPockets(db) {
+  const { ensureDefaultFundPocket, ensureExpenseFundPockets } = await import('./fund.js');
+  const migrationDb = db.kind === 'postgres' ? new PostgresAdapter(db.sql) : db;
+  const families = await migrationDb.prepare("SELECT id FROM families WHERE space_type = 'family'").all();
+  for (const family of families) {
+    const pocket = await ensureDefaultFundPocket(migrationDb, family.id);
+    await ensureExpenseFundPockets(migrationDb, family.id);
+    await migrationDb.prepare('UPDATE fund_contributions SET fund_pocket_id = ? WHERE family_id = ? AND fund_pocket_id IS NULL')
+      .run(pocket.id, family.id);
+    await migrationDb.prepare('UPDATE transactions SET fund_pocket_id = ? WHERE family_id = ? AND paid_from_fund = 1 AND fund_pocket_id IS NULL')
+      .run(pocket.id, family.id);
+  }
 }
 
 async function backfillPersonalSpaces(db) {
