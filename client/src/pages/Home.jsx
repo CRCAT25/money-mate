@@ -18,8 +18,8 @@ export default function Home() {
   const { touch, getCache, loadCache, loadFund, prefetchPages, loading: baseLoading, isPersonal } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [contentView, setContentView] = useState('fund');
+  const [selectedDates, setSelectedDates] = useState([]);
+  const [contentView, setContentView] = useState('transactions');
   const initialHomeCache = getCache(`home:${month}`);
   const [summary, setSummary] = useState(() => initialHomeCache?.summary || null);
   const [transactions, setTransactions] = useState(() => initialHomeCache?.transactions || []);
@@ -80,22 +80,30 @@ export default function Home() {
   }, {}), [fund]);
   const showingFund = !isPersonal && contentView === 'fund';
   const dailyCashflow = showingFund ? fundDailyCashflow : transactionDailyCashflow;
+  const selectedDateSet = useMemo(() => new Set(selectedDates), [selectedDates]);
   const fundSummary = useMemo(() => Object.values(fundDailyCashflow).reduce((totals, day) => ({
     income: totals.income + day.income,
     expense: totals.expense + day.expense,
     balance: totals.balance + day.income - day.expense,
   }), { income: 0, expense: 0, balance: 0 }), [fundDailyCashflow]);
   const displayedTransactions = useMemo(
-    () => selectedDate ? transactions.filter((transaction) => transaction.transactionDate === selectedDate) : transactions,
-    [selectedDate, transactions],
+    () => selectedDates.length ? transactions.filter((transaction) => selectedDateSet.has(transaction.transactionDate)) : transactions,
+    [selectedDates.length, selectedDateSet, transactions],
   );
-  const displayedSummary = selectedDate
-    ? {
-      income: dailyCashflow[selectedDate]?.income || 0,
-      expense: dailyCashflow[selectedDate]?.expense || 0,
-      balance: (dailyCashflow[selectedDate]?.income || 0) - (dailyCashflow[selectedDate]?.expense || 0),
-    }
-    : showingFund ? fundSummary : summary;
+  const selectedSummary = useMemo(() => selectedDates.reduce((totals, date) => {
+    const day = dailyCashflow[date];
+    const income = Number(day?.income || 0);
+    const expense = Number(day?.expense || 0);
+    return {
+      income: totals.income + income,
+      expense: totals.expense + expense,
+      balance: totals.balance + income - expense,
+    };
+  }, { income: 0, expense: 0, balance: 0 }), [dailyCashflow, selectedDates]);
+  const displayedSummary = selectedDates.length ? selectedSummary : showingFund ? fundSummary : summary;
+  const selectedDateLabel = selectedDates.length === 1
+    ? formatSelectedDate(selectedDates[0])
+    : `${selectedDates.length} ngày đã chọn`;
   const summaryLabels = showingFund
     ? { income: 'Đã góp', expense: 'Đã dùng', balance: 'Còn lại' }
     : { income: 'Thu nhập', expense: 'Chi tiêu', balance: 'Còn lại' };
@@ -119,7 +127,7 @@ export default function Home() {
   return (
     <div className="space-y-4 sm:space-y-5">
       <div className="fixed inset-x-0 top-[env(safe-area-inset-top)] z-30 flex h-12 items-center bg-cream/90 px-4 backdrop-blur-xl sm:px-7 lg:static lg:h-auto lg:bg-transparent lg:px-0 lg:backdrop-blur-none">
-        <MonthPicker value={month} onChange={(nextMonth) => { setMonth(nextMonth); setSelectedDate(null); }} dense fullWidth variant="budget" />
+        <MonthPicker value={month} onChange={(nextMonth) => { setMonth(nextMonth); setSelectedDates([]); }} dense fullWidth variant="budget" />
       </div>
 
       <section className="overflow-hidden rounded-[18px] border border-ink/[0.07] bg-paper/90 shadow-card">
@@ -129,7 +137,7 @@ export default function Home() {
             <div key={day} className={`py-1.5 text-center text-[10px] font-semibold ${index === 5 ? 'text-[#1698bf]' : index === 6 ? 'text-coral' : 'text-ink/45'}`}>{day}</div>
           ))}
         </div>
-        {loading ? <CalendarSkeleton /> : <CashflowCalendar month={month} dailyCashflow={dailyCashflow} selectedDate={selectedDate} onSelectDate={setSelectedDate} />}
+        {loading ? <CalendarSkeleton /> : <CashflowCalendar month={month} dailyCashflow={dailyCashflow} selectedDates={selectedDateSet} onToggleDate={(date) => setSelectedDates((current) => current.includes(date) ? current.filter((item) => item !== date) : [...current, date])} />}
         <div className="grid grid-cols-3 border-t border-ink/[0.07] bg-white/55">
           <SummaryItem label={summaryLabels.income} value={displayedSummary?.income} currency={family.currency} tone="income" loading={loading} />
           <SummaryItem label={summaryLabels.expense} value={displayedSummary?.expense} currency={family.currency} tone="expense" loading={loading} />
@@ -144,11 +152,11 @@ export default function Home() {
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <CalendarDays className="size-5 text-forest" />
-              <h2 className="whitespace-nowrap text-base font-bold tracking-[-0.02em] text-ink sm:text-xl">{selectedDate ? `Giao dịch ${formatSelectedDate(selectedDate)}` : 'Giao dịch gần đây'}</h2>
+              <h2 className="whitespace-nowrap text-base font-bold tracking-[-0.02em] text-ink sm:text-xl">{selectedDates.length ? `Giao dịch ${selectedDateLabel}` : 'Giao dịch gần đây'}</h2>
             </div>
-            {selectedDate && <button type="button" onClick={() => setSelectedDate(null)} className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-[9px] bg-ink/[0.045] px-2.5 text-[10px] font-medium text-ink/52 transition active:scale-[0.98]"><X className="size-3.5" /> Xem cả tháng</button>}
+            {selectedDates.length > 0 && <button type="button" onClick={() => setSelectedDates([])} className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-[9px] bg-ink/[0.045] px-2.5 text-[10px] font-medium text-ink/52 transition active:scale-[0.98]"><X className="size-3.5" /> Xem cả tháng</button>}
           </div>
-          {loading ? <TransactionListSkeleton compact /> : <TransactionList transactions={displayedTransactions} currency={family.currency} onDelete={setDeleteTarget} compact groupByDate={!selectedDate} showTime showMember={!isPersonal} />}
+          {loading ? <TransactionListSkeleton compact /> : <TransactionList transactions={displayedTransactions} currency={family.currency} onDelete={setDeleteTarget} compact groupByDate={selectedDates.length !== 1} showTime showMember={!isPersonal} />}
         </section>
       )}
 
@@ -192,10 +200,6 @@ function FundCard({ fund, currency, loading }) {
             <h2 className="text-[13px] font-medium text-ink sm:text-sm">Quỹ chung</h2>
             <p className="text-[10px] font-normal text-ink/42">Theo dõi kế hoạch nạp quỹ tháng này</p>
           </div>
-        </div>
-        <div className="text-right">
-          <div className="text-[9px] font-medium uppercase tracking-[0.08em] text-ink/38">Số dư</div>
-          {loading ? <Skeleton className="mt-1 h-5 w-24" /> : <div className="mt-0.5 text-[16px] font-normal tracking-[-0.025em] text-forest sm:text-lg">{formatMoney(fund?.balance || 0, currency)}</div>}
         </div>
       </div>
 
@@ -243,12 +247,10 @@ function FundCard({ fund, currency, loading }) {
   );
 }
 
-function CashflowCalendar({ month, dailyCashflow, selectedDate, onSelectDate }) {
+function CashflowCalendar({ month, dailyCashflow, selectedDates, onToggleDate }) {
   const [year, monthNumber] = month.split('-').map(Number);
   const firstDay = new Date(Date.UTC(year, monthNumber - 1, 1));
   const leadingDays = (firstDay.getUTCDay() + 6) % 7;
-  const today = new Date();
-  const todayKey = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())).toISOString().slice(0, 10);
 
   return (
     <div className="grid grid-cols-7">
@@ -259,8 +261,12 @@ function CashflowCalendar({ month, dailyCashflow, selectedDate, onSelectDate }) 
         const inCurrentMonth = date.getUTCMonth() === monthNumber - 1;
         const dayOfWeek = index % 7;
         const cashflow = dailyCashflow[dateKey];
-        const isToday = dateKey === todayKey;
-        const isSelected = dateKey === selectedDate;
+        const isSelected = selectedDates.has(dateKey);
+        const backgroundClass = !inCurrentMonth
+          ? 'cursor-default bg-ink/[0.018]'
+          : isSelected
+            ? 'cursor-pointer bg-sun/15 active:bg-sun/20'
+            : 'cursor-pointer bg-white/35 active:bg-sun/15';
 
         return (
           <button
@@ -269,14 +275,14 @@ function CashflowCalendar({ month, dailyCashflow, selectedDate, onSelectDate }) 
             disabled={!inCurrentMonth}
             aria-label={`${date.getUTCDate()} tháng ${monthNumber}${cashflow ? `, thu ${cashflow.income || 0}, chi ${cashflow.expense || 0}` : ''}`}
             aria-pressed={isSelected}
-            onClick={() => onSelectDate(isSelected ? null : dateKey)}
-            className={`relative min-h-[40px] border-b border-r border-ink/[0.06] p-0.5 text-left outline-none focus:shadow-none focus:outline-none focus-visible:shadow-none focus-visible:outline-none transition-colors sm:min-h-[52px] sm:p-1 ${inCurrentMonth ? 'cursor-pointer bg-white/35 active:bg-sun/40' : 'cursor-default bg-ink/[0.018]'} ${isToday ? 'bg-sun/15' : ''} ${isSelected ? 'bg-sun/35' : ''}`}
+            onClick={() => onToggleDate(dateKey)}
+            className={`relative flex min-h-[40px] flex-col items-stretch justify-start border-b border-r border-ink/[0.06] p-0.5 text-left align-top outline-none focus:shadow-none focus:outline-none focus-visible:shadow-none focus-visible:outline-none transition-colors sm:min-h-[52px] sm:p-1 ${backgroundClass}`}
           >
             <span className={`text-[11px] font-bold sm:text-xs ${!inCurrentMonth ? 'text-ink/20' : dayOfWeek === 5 ? 'text-[#1698bf]' : dayOfWeek === 6 ? 'text-coral' : 'text-ink/60'}`}>{date.getUTCDate()}</span>
             {inCurrentMonth && cashflow && (
-              <div className="mt-0.5 flex flex-col items-end whitespace-nowrap text-[7.5px] font-normal leading-[9px] tracking-[-0.03em] sm:mt-1 sm:text-[9px] sm:leading-[11px]">
-                {cashflow.income > 0 && <span className="text-[#2D8A72]">+{formatCalendarAmount(cashflow.income)}</span>}
-                {cashflow.expense > 0 && <span className="text-coral">−{formatCalendarAmount(cashflow.expense)}</span>}
+              <div className="mt-0.5 grid grid-rows-2 justify-items-end whitespace-nowrap text-[7.5px] font-normal leading-[9px] tracking-[-0.03em] sm:mt-1 sm:text-[9px] sm:leading-[11px]">
+                {cashflow.income > 0 && <span className="row-start-1 text-[#2D8A72]">+{formatCalendarAmount(cashflow.income)}</span>}
+                {cashflow.expense > 0 && <span className="row-start-2 text-coral">−{formatCalendarAmount(cashflow.expense)}</span>}
               </div>
             )}
           </button>

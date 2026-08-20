@@ -267,30 +267,38 @@ function FundPlanCard({ pocket, currency, index }) {
 
 function FundPlanEditor({ pockets, members, currency, values, saving, onChange, onAdd }) {
   return (
-    <section className="space-y-3">
-      <div className="rounded-[16px] border border-ink/[0.065] bg-paper/90 px-4 py-3 shadow-card">
+    <section className="space-y-2.5">
+      <div className="rounded-[14px] border border-ink/[0.065] bg-paper/90 px-3.5 py-2.5 shadow-card">
         <div className="flex items-center justify-between gap-3"><div><div className="text-sm font-medium text-ink">Chỉ tiêu mỗi tháng</div><p className="mt-0.5 text-[10px] font-normal text-ink/38">Mọi danh mục chi tiêu đều có sẵn; tổng quỹ được tính từ từng thành viên.</p></div><Users className="size-5 shrink-0 text-forest/65" /></div>
       </div>
 
       {pockets.map((pocket, index) => {
         const total = members.reduce((sum, member) => sum + Number(values[pocket.id]?.[member.id] || 0), 0);
         return (
-          <article key={pocket.id} className="animate-rise-in overflow-hidden rounded-[16px] border border-ink/[0.065] bg-paper/90 shadow-card" style={{ animationDelay: `${Math.min(index * 30, 160)}ms` }}>
-            <div className="flex items-center justify-between gap-3 border-b border-ink/[0.06] px-3.5 py-3">
+          <article key={pocket.id} className="animate-rise-in overflow-hidden rounded-[14px] border border-ink/[0.065] bg-paper/90 shadow-card" style={{ animationDelay: `${Math.min(index * 30, 160)}ms` }}>
+            <div className="flex items-center justify-between gap-3 px-3 py-2.5">
               <div className="flex min-w-0 items-center gap-2.5"><FundPocketIcon pocket={pocket} /><span className="truncate text-sm font-medium text-ink">{pocket.name}</span></div>
-              <span className="shrink-0 text-xs font-normal text-forest">{formatMoney(total, currency)}</span>
+              <div className="shrink-0 text-right"><div className="text-[8px] font-normal uppercase tracking-[0.08em] text-ink/30">Tổng</div><span className="text-[11px] font-normal text-forest">{formatMoney(total, currency)}</span></div>
             </div>
-            <div className="px-3.5">
-              {members.map((member) => (
-                <div key={member.id} className="flex min-h-[54px] items-center gap-2.5 border-b border-ink/[0.06] last:border-b-0">
-                  <Avatar user={member} size="xs" />
-                  <label htmlFor={`fund-target-${pocket.id}-${member.id}`} className="min-w-0 flex-1 truncate text-[11px] font-normal text-ink/62">{member.displayName}</label>
-                  <div className="relative w-[132px] shrink-0 border-b border-ink/10">
-                    <input id={`fund-target-${pocket.id}-${member.id}`} className="h-9 w-full border-0 bg-transparent pl-1 pr-6 text-right text-sm font-normal tabular-nums text-ink outline-none placeholder:text-xs placeholder:text-ink/25 focus:border-0 focus:ring-0" inputMode="numeric" value={formatInputAmount(values[pocket.id]?.[member.id])} onChange={(event) => onChange(pocket.id, member.id, event.target.value.replace(/\D/g, '').slice(0, 12))} onFocus={(event) => event.currentTarget.select()} placeholder="0" disabled={saving} />
+            <div className={`grid border-t border-ink/[0.055] ${members.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+              {members.map((member, memberIndex) => {
+                const columns = members.length === 1 ? 1 : 2;
+                const lastRowStart = members.length - (members.length % columns || columns);
+                const isLastRow = memberIndex >= lastRowStart;
+                const isRightEdge = columns === 1 || memberIndex % columns === columns - 1 || memberIndex === members.length - 1;
+                return (
+                <div key={member.id} className={`min-w-0 border-ink/[0.055] px-3 py-2.5 ${isLastRow ? '' : 'border-b'} ${isRightEdge ? '' : 'border-r'}`}>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <Avatar user={member} size="xs" />
+                    <label htmlFor={`fund-target-${pocket.id}-${member.id}`} className="min-w-0 truncate text-[10px] font-normal text-ink/55">{member.displayName}</label>
+                  </div>
+                  <div className="relative mt-1 border-b border-ink/10">
+                    <input id={`fund-target-${pocket.id}-${member.id}`} className="h-7 w-full border-0 bg-transparent pl-0 pr-5 text-right text-[12px] font-normal tabular-nums text-ink outline-none placeholder:text-[11px] placeholder:text-ink/22 focus:border-0 focus:outline-none focus:ring-0" inputMode="numeric" value={formatInputAmount(values[pocket.id]?.[member.id])} onChange={(event) => onChange(pocket.id, member.id, event.target.value.replace(/\D/g, '').slice(0, 12))} onFocus={(event) => event.currentTarget.select()} placeholder="0" disabled={saving} />
                     <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[10px] font-normal text-ink/32">{currency === 'VND' ? '₫' : currency}</span>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </article>
         );
