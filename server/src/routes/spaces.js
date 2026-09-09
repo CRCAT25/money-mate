@@ -11,9 +11,58 @@ import {
   listUserSpaces,
 } from '../spaces.js';
 import { validate } from '../validation.js';
+import { DEFAULT_GEMINI_MODEL, encryptGeminiApiKey, getSpaceGeminiConfig, maskGeminiApiKey, normalizeGeminiApiKey } from '../geminiKeys.js';
 
 const router = express.Router();
 router.use(authenticate);
+
+router.get('/:spaceId/gemini', [param('spaceId').isUUID()], validate, async (req, res) => {
+  const db = getDb();
+  const space = await getAccessibleSpace(db, req.user.id, req.params.spaceId);
+  if (!space) return res.status(404).json({ message: 'Không tìm thấy không gian.' });
+  const gemini = await getSpaceGeminiConfig(db, space.id);
+  res.json({
+    configured: gemini.configured,
+    maskedKey: gemini.configured ? maskGeminiApiKey(gemini.apiKey) : '',
+    model: gemini.model,
+  });
+});
+
+router.patch(
+  '/:spaceId/gemini',
+  [
+    param('spaceId').isUUID(),
+    body('apiKey')
+      .customSanitizer(normalizeGeminiApiKey)
+      .isLength({ min: 20, max: 256 })
+      .matches(/^\S+$/)
+      .withMessage('Gemini API key không hợp lệ.'),
+      body('model').optional().isIn([DEFAULT_GEMINI_MODEL]).withMessage('Model Gemini chưa được hỗ trợ.'),
+  ],
+  validate,
+  async (req, res) => {
+    const db = getDb();
+    const space = await getAccessibleSpace(db, req.user.id, req.params.spaceId);
+    if (!space) return res.status(404).json({ message: 'Không tìm thấy không gian.' });
+    if (space.type === 'family' && space.role !== 'owner') return res.status(403).json({ message: 'Chỉ chủ gia đình mới có thể cấu hình Gemini.' });
+    await db.prepare('UPDATE families SET gemini_api_key_encrypted = ?, gemini_model = ? WHERE id = ?')
+      .run(encryptGeminiApiKey(req.body.apiKey), req.body.model || DEFAULT_GEMINI_MODEL, space.id);
+    await bumpFamilyRevision(db, space.id, { base: true });
+    emitFamily(space.id, 'space:changed');
+    res.json({ message: 'Đã lưu Gemini API key riêng cho không gian này.' });
+  },
+);
+
+router.delete('/:spaceId/gemini', [param('spaceId').isUUID()], validate, async (req, res) => {
+  const db = getDb();
+  const space = await getAccessibleSpace(db, req.user.id, req.params.spaceId);
+  if (!space) return res.status(404).json({ message: 'Không tìm thấy không gian.' });
+  if (space.type === 'family' && space.role !== 'owner') return res.status(403).json({ message: 'Chỉ chủ gia đình mới có thể xóa cấu hình Gemini.' });
+  await db.prepare('UPDATE families SET gemini_api_key_encrypted = NULL WHERE id = ?').run(space.id);
+  await bumpFamilyRevision(db, space.id, { base: true });
+  emitFamily(space.id, 'space:changed');
+  res.status(204).end();
+});
 
 router.get('/', async (req, res) => {
   const spaces = await listUserSpaces(getDb(), req.user.id);
@@ -56,6 +105,11 @@ router.patch(
     body('name').optional().trim().isLength({ min: 2, max: 60 }),
     body('currency').isIn(['VND', 'USD', 'EUR']),
     body('language').isIn(['vi', 'en']),
+    body('showRecentTransactions').optional().isBoolean(),
+    body('showSpendingPlan').optional().isBoolean(),
+    body('showIncomePlan').optional().isBoolean(),
+    body('showFundPlan').optional().isBoolean(),
+    body('showShoppingPlan').optional().isBoolean(),
   ],
   validate,
   async (req, res) => {
@@ -66,8 +120,21 @@ router.patch(
       return res.status(403).json({ message: 'Chỉ chủ gia đình mới có thể thay đổi thông tin chung.' });
     }
     const name = space.type === 'personal' ? 'Cá nhân' : req.body.name;
-    await db.prepare('UPDATE families SET name = ?, currency = ?, language = ? WHERE id = ?')
-      .run(name, req.body.currency, req.body.language, space.id);
+    const showRecentTransactions = req.body.showRecentTransactions === undefined ? null : (req.body.showRecentTransactions ? 1 : 0);
+    const showSpendingPlan = req.body.showSpendingPlan === undefined ? null : (req.body.showSpendingPlan ? 1 : 0);
+    const showIncomePlan = req.body.showIncomePlan === undefined ? null : (req.body.showIncomePlan ? 1 : 0);
+    const showFundPlan = req.body.showFundPlan === undefined ? null : (req.body.showFundPlan ? 1 : 0);
+    const showShoppingPlan = req.body.showShoppingPlan === undefined ? null : (req.body.showShoppingPlan ? 1 : 0);
+    await db.prepare(`
+      UPDATE families
+      SET name = ?, currency = ?, language = ?,
+        show_recent_transactions = COALESCE(?, show_recent_transactions),
+        show_spending_plan = COALESCE(?, show_spending_plan),
+        show_income_plan = COALESCE(?, show_income_plan),
+        show_fund_plan = COALESCE(?, show_fund_plan),
+        show_shopping_plan = COALESCE(?, show_shopping_plan)
+      WHERE id = ?
+    `).run(name, req.body.currency, req.body.language, showRecentTransactions, showSpendingPlan, showIncomePlan, showFundPlan, showShoppingPlan, space.id);
     await bumpFamilyRevision(db, space.id, { base: true });
     emitFamily(space.id, 'space:changed');
     res.json({ message: space.type === 'personal' ? 'Đã cập nhật thiết lập cá nhân.' : 'Đã cập nhật thông tin gia đình.' });

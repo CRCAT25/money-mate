@@ -23,13 +23,14 @@ export async function ensureDefaultFundPocket(db, familyId) {
 }
 
 export async function ensureExpenseFundPockets(db, familyId) {
+  await archiveDetachedCategoryPockets(db, familyId);
   const [categories, pockets] = await Promise.all([
     db.prepare(`
       SELECT id, name, color FROM categories
       WHERE family_id = ? AND type = 'expense'
       ORDER BY is_default DESC, LOWER(name)
     `).all(familyId),
-    db.prepare('SELECT id, name, color, category_id FROM fund_pockets WHERE family_id = ?').all(familyId),
+    db.prepare('SELECT id, name, color, category_id FROM fund_pockets WHERE family_id = ? AND is_archived = 0').all(familyId),
   ]);
   const byCategory = new Map(pockets.filter((pocket) => pocket.category_id).map((pocket) => [pocket.category_id, pocket]));
   const byName = new Map(pockets.map((pocket) => [pocket.name.trim().toLocaleLowerCase('vi'), pocket]));
@@ -71,31 +72,179 @@ export async function ensureExpenseFundPockets(db, familyId) {
   }
 }
 
+// Clean up category-linked pockets created before archived pockets were introduced.
+async function archiveDetachedCategoryPockets(db, familyId) {
+  const pockets = await db.prepare(`
+    SELECT fp.id
+    FROM fund_pockets fp
+    WHERE fp.family_id = ? AND fp.category_id IS NULL AND fp.is_default = 0 AND fp.is_archived = 0
+      AND EXISTS (
+        SELECT 1 FROM transactions t
+        WHERE t.family_id = fp.family_id AND t.category_id IS NULL AND t.category_name = fp.name
+      )
+  `).all(familyId);
+  for (const pocket of pockets) {
+    await db.prepare('DELETE FROM fund_pocket_member_targets WHERE pocket_id = ?').run(pocket.id);
+    await db.prepare('UPDATE fund_pockets SET is_archived = 1, monthly_target = 0 WHERE id = ? AND family_id = ?')
+      .run(pocket.id, familyId);
+  }
+}
+
+export async function syncFundTargetsFromBudgets(db, familyId, budgetItems) {
+  if (!budgetItems.length) return;
+
+  await ensureExpenseFundPockets(db, familyId);
+  const members = await db.prepare(`
+    SELECT u.id
+    FROM family_members fm
+    JOIN users u ON u.id = fm.user_id
+    WHERE fm.family_id = ?
+    ORDER BY fm.role DESC, fm.joined_at
+  `).all(familyId);
+  if (!members.length) return;
+
+  const categoryIds = [...new Set(budgetItems.map((item) => item.categoryId))];
+  const pockets = await db.prepare(`
+    SELECT id, category_id, is_archived
+    FROM fund_pockets
+    WHERE family_id = ? AND category_id IN (${categoryIds.map(() => '?').join(', ')})
+  `).all(familyId, ...categoryIds);
+  const pocketByCategory = new Map(pockets.map((pocket) => [pocket.category_id, pocket]));
+
+  for (const item of budgetItems) {
+    const pocket = pocketByCategory.get(item.categoryId);
+    if (!pocket) continue;
+
+    const amount = Number(item.amount);
+    if (amount > 0) {
+      // Reuse the historical pocket when a deleted plan is created again.
+      await db.prepare('UPDATE fund_pockets SET is_archived = 0 WHERE id = ? AND family_id = ?')
+        .run(pocket.id, familyId);
+      if (members.length) await applyEqualFundTarget(db, familyId, pocket.id, amount, members);
+    } else {
+      await clearLinkedFundPocket(db, familyId, pocket.id);
+    }
+  }
+}
+
+async function clearLinkedFundPocket(db, familyId, pocketId) {
+  // Keep contributions and old expenses for reporting, but prevent new payments.
+  await db.prepare('DELETE FROM fund_pocket_member_targets WHERE pocket_id = ?').run(pocketId);
+  await db.prepare(`
+    UPDATE fund_pockets
+    SET is_archived = 1, monthly_target = 0
+    WHERE id = ? AND family_id = ? AND category_id IS NOT NULL
+  `).run(pocketId, familyId);
+}
+
+export async function clearAllLinkedFundTargets(db, familyId) {
+  const pockets = await db.prepare(`
+    SELECT id FROM fund_pockets
+    WHERE family_id = ? AND category_id IS NOT NULL
+  `).all(familyId);
+  for (const pocket of pockets) await clearLinkedFundPocket(db, familyId, pocket.id);
+}
+
+export async function syncMissingFundTargetsFromBudgets(db, familyId, month) {
+  await ensureExpenseFundPockets(db, familyId);
+  const members = await db.prepare(`
+    SELECT u.id
+    FROM family_members fm
+    JOIN users u ON u.id = fm.user_id
+    WHERE fm.family_id = ?
+    ORDER BY fm.role DESC, fm.joined_at
+  `).all(familyId);
+  if (!members.length) return;
+
+  const pockets = await db.prepare(`
+    SELECT fp.id, fp.category_id
+    FROM fund_pockets fp
+      WHERE fp.family_id = ? AND fp.is_archived = 0
+      AND fp.category_id IS NOT NULL
+      AND fp.monthly_target = 0
+      AND NOT EXISTS (
+        SELECT 1 FROM fund_pocket_member_targets fmt WHERE fmt.pocket_id = fp.id
+      )
+  `).all(familyId);
+  if (!pockets.length) return;
+
+  const categoryIds = pockets.map((pocket) => pocket.category_id);
+  const placeholders = categoryIds.map(() => '?').join(', ');
+  const [overrides, rules, legacyBudgets] = await Promise.all([
+    db.prepare(`
+      SELECT category_id, amount FROM budget_month_overrides
+      WHERE family_id = ? AND month = ? AND category_id IN (${placeholders})
+    `).all(familyId, month, ...categoryIds),
+    db.prepare(`
+      SELECT category_id, amount, effective_from FROM budget_rules
+      WHERE family_id = ? AND effective_from <= ? AND category_id IN (${placeholders})
+      ORDER BY effective_from DESC
+    `).all(familyId, month, ...categoryIds),
+    db.prepare(`
+      SELECT category_id, amount FROM budgets
+      WHERE family_id = ? AND month = ? AND category_id IN (${placeholders})
+    `).all(familyId, month, ...categoryIds),
+  ]);
+  const overridesByCategory = new Map(overrides.map((item) => [item.category_id, item.amount]));
+  const rulesByCategory = new Map();
+  for (const item of rules) if (!rulesByCategory.has(item.category_id)) rulesByCategory.set(item.category_id, item.amount);
+  const legacyByCategory = new Map(legacyBudgets.map((item) => [item.category_id, item.amount]));
+
+  for (const pocket of pockets) {
+    const amount = Number(
+      overridesByCategory.get(pocket.category_id)
+      ?? rulesByCategory.get(pocket.category_id)
+      ?? legacyByCategory.get(pocket.category_id)
+      ?? 0,
+    );
+    if (amount > 0) await applyEqualFundTarget(db, familyId, pocket.id, amount, members);
+  }
+}
+
+async function applyEqualFundTarget(db, familyId, pocketId, total, members) {
+  const baseAmount = Math.floor(total / members.length);
+  const remainder = total % members.length;
+  await db.prepare('UPDATE fund_pockets SET monthly_target = ? WHERE id = ? AND family_id = ?')
+    .run(total, pocketId, familyId);
+  await db.prepare('DELETE FROM fund_pocket_member_targets WHERE pocket_id = ?').run(pocketId);
+
+  for (const [index, member] of members.entries()) {
+    const amount = baseAmount + (index < remainder ? 1 : 0);
+    if (!amount) continue;
+    await db.prepare(`
+      INSERT INTO fund_pocket_member_targets (pocket_id, user_id, target_amount)
+      VALUES (?, ?, ?)
+    `).run(pocketId, member.id, amount);
+  }
+}
+
 export async function getFundTotals(db, familyId, { excludeTransactionId = null, pocketId = null } = {}) {
-  const contributionWhere = ['family_id = ?'];
+  const contributionWhere = ['fc.family_id = ?', 'fp.is_archived = 0'];
   const contributionParams = [familyId];
   if (pocketId) {
-    contributionWhere.push('fund_pocket_id = ?');
+    contributionWhere.push('fc.fund_pocket_id = ?');
     contributionParams.push(pocketId);
   }
   const contribution = await db.prepare(`
     SELECT COALESCE(SUM(amount), 0) AS total
-    FROM fund_contributions
+    FROM fund_contributions fc
+    JOIN fund_pockets fp ON fp.id = fc.fund_pocket_id
     WHERE ${contributionWhere.join(' AND ')}
   `).get(...contributionParams);
-  const where = ['family_id = ?', "type = 'expense'", 'paid_from_fund = 1'];
+  const where = ['t.family_id = ?', 'fp.is_archived = 0', "t.type = 'expense'", 't.paid_from_fund = 1'];
   const params = [familyId];
   if (pocketId) {
-    where.push('fund_pocket_id = ?');
+    where.push('t.fund_pocket_id = ?');
     params.push(pocketId);
   }
   if (excludeTransactionId) {
-    where.push('id <> ?');
+    where.push('t.id <> ?');
     params.push(excludeTransactionId);
   }
   const spent = await db.prepare(`
     SELECT COALESCE(SUM(amount), 0) AS total
-    FROM transactions
+    FROM transactions t
+    JOIN fund_pockets fp ON fp.id = t.fund_pocket_id
     WHERE ${where.join(' AND ')}
   `).get(...params);
   const totalContributed = Number(contribution?.total || 0);

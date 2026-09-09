@@ -84,7 +84,7 @@ export default function Categories() {
         </section>
       )}
 
-      <div className="rounded-[16px] border border-sun/25 bg-sun/10 p-4 text-sm leading-5 text-ink/65"><strong className="text-ink">Lưu ý:</strong> Danh mục đã có giao dịch sẽ không thể xóa để bảo toàn lịch sử. Bạn vẫn có thể đổi tên, màu và biểu tượng.</div>
+      <div className="rounded-[16px] border border-sun/25 bg-sun/10 p-4 text-sm leading-5 text-ink/65"><strong className="text-ink">Lưu ý:</strong> Bạn có thể xóa danh mục bất cứ lúc nào. Các giao dịch cũ vẫn giữ tên danh mục tại thời điểm phát sinh để bảo toàn lịch sử.</div>
 
       <Modal open={Boolean(modal)} onClose={() => setModal(null)} title={modal === 'create' ? 'Danh mục mới' : 'Chỉnh sửa danh mục'}>
         <form onSubmit={submit} className="space-y-5">
@@ -99,7 +99,7 @@ export default function Categories() {
       <ConfirmModal
         open={Boolean(deleteTarget)}
         title="Xóa danh mục?"
-        description={deleteTarget ? `Danh mục “${deleteTarget.name}” sẽ bị xóa. Danh mục đã có giao dịch sẽ được hệ thống bảo vệ và không thể xóa.` : ''}
+        description={deleteTarget ? `Danh mục “${deleteTarget.name}” sẽ bị xóa khỏi danh sách. Các giao dịch cũ vẫn giữ lại tên danh mục này trong lịch sử.` : ''}
         confirmLabel="Xóa danh mục"
         loading={deleting}
         onClose={() => setDeleteTarget(null)}

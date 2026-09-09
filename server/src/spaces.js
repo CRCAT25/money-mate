@@ -76,8 +76,11 @@ export async function createFamilySpace(db, userId, { name, currency = 'VND', la
   const familyId = id();
   await db.transaction(async (transaction) => {
     await transaction.prepare(`
-      INSERT INTO families (id, name, invite_code, currency, language, space_type)
-      VALUES (?, ?, ?, ?, ?, 'family')
+      INSERT INTO families (
+        id, name, invite_code, currency, language, space_type,
+        show_recent_transactions, show_spending_plan, show_income_plan, show_fund_plan, show_shopping_plan
+      )
+      VALUES (?, ?, ?, ?, ?, 'family', 0, 0, 1, 1, 1)
     `).run(familyId, name.trim(), code, currency, language);
     await transaction.prepare('INSERT INTO family_members (family_id, user_id, role) VALUES (?, ?, ?)')
       .run(familyId, userId, 'owner');
@@ -107,6 +110,12 @@ export function mapSpace(space) {
     language: space.language,
     role: space.space_type === 'personal' ? 'owner' : space.role,
     ownerUserId: space.owner_user_id || null,
+    geminiConfigured: Boolean(space.gemini_api_key_encrypted),
+    showRecentTransactions: space.show_recent_transactions !== 0,
+    showSpendingPlan: space.show_spending_plan !== 0,
+    showIncomePlan: space.show_income_plan !== 0,
+    showFundPlan: space.show_fund_plan !== 0,
+    showShoppingPlan: space.show_shopping_plan !== 0,
     revisions: {
       baseRevision: Number(space.base_revision || 0),
       transactionsRevision: Number(space.transactions_revision || 0),

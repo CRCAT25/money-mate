@@ -295,6 +295,26 @@ textarea,
   user-select: text;
 }
 
+.money-input {
+  caret-color: #20312c;
+}
+
+@keyframes amount-caret-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.amount-focus-caret {
+  animation: amount-caret-blink 1s steps(1, end) infinite;
+}
+
 button,
 a {
   -webkit-tap-highlight-color: transparent;
@@ -377,6 +397,10 @@ a:focus-visible {
     @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-ink/10 bg-white/70 px-4 text-sm font-bold text-ink transition active:scale-[0.98] hover:bg-white;
   }
 
+  .icon-button {
+    @apply grid size-9 place-items-center rounded-[10px] text-ink/42 transition hover:bg-ink/[0.05] hover:text-ink active:scale-95 disabled:pointer-events-none disabled:opacity-45;
+  }
+
   .section-title {
     @apply font-editorial text-[21px] font-semibold leading-tight tracking-[-0.02em] text-ink;
   }
@@ -400,6 +424,21 @@ a:focus-visible {
 @keyframes skeleton-shimmer {
   100% {
     transform: translateX(100%);
+  }
+}
+
+@keyframes keypad-rise {
+  from { transform: translateY(20px); }
+  to { transform: translateY(0); }
+}
+
+.keypad-surface {
+  animation: keypad-rise 180ms cubic-bezier(.22, .8, .24, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .keypad-surface {
+    animation: none;
   }
 }
 

@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { Check, Landmark, LoaderCircle, Pencil, Plus, Users, X } from 'lucide-react';
 import PlanModeTabs from '../components/plans/PlanModeTabs.jsx';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
+import MoneyInput from '../components/ui/MoneyInput.jsx';
 import Avatar from '../components/ui/Avatar.jsx';
 import Modal from '../components/ui/Modal.jsx';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
@@ -11,7 +12,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import api, { errorMessage } from '../utils/api.js';
-import { currentMonth, formatMoney } from '../utils/formatters.js';
+import { currentMonth, formatInputAmount, formatMoney } from '../utils/formatters.js';
 import { visibleFundPockets } from '../utils/fund.js';
 
 const pocketColors = ['#3D7060', '#D47A61', '#D29D3A', '#4B83A6', '#7B6D9C', '#5E8B62', '#C45D7A', '#348A86'];
@@ -94,16 +95,19 @@ export default function FundPlans() {
 
     setSaving(true);
     try {
-      for (const pocket of changes) {
-        const memberTargets = members.map((member) => ({
-          userId: member.id,
-          amount: Number(draftTargets[pocket.id]?.[member.id] || 0),
-        }));
-        await api.post(`/fund/pockets/${pocket.id}/target`, {
-          monthlyTarget: memberTargets.reduce((sum, member) => sum + member.amount, 0),
-          members: memberTargets,
-        });
-      }
+      await api.post('/fund/pockets/targets', {
+        items: changes.map((pocket) => {
+          const memberTargets = members.map((member) => ({
+            userId: member.id,
+            amount: Number(draftTargets[pocket.id]?.[member.id] || 0),
+          }));
+          return {
+            pocketId: pocket.id,
+            monthlyTarget: memberTargets.reduce((sum, member) => sum + member.amount, 0),
+            members: memberTargets,
+          };
+        }),
+      });
       touch();
       const entry = await loadFund(month);
       setData(entry?.data || null);
@@ -204,13 +208,14 @@ export default function FundPlans() {
 
 function FundPlanSummary({ totals, currency }) {
   const percentage = totals.target > 0 ? Math.min(100, (totals.contributed / totals.target) * 100) : 0;
+  const progressTone = totals.remaining > 0 ? 'bg-coral' : 'bg-forest';
   return (
     <section className="overflow-hidden rounded-[16px] border border-ink/[0.07] bg-[linear-gradient(135deg,rgba(230,242,237,0.9),rgba(255,250,240,0.9))] px-4 py-3 shadow-card sm:px-5">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2"><Landmark className="size-4 text-forest" /><h2 className="text-sm font-semibold tracking-[-0.015em] text-ink">Tổng cần nạp</h2></div>
         <span className="shrink-0 whitespace-nowrap text-right text-xs font-medium text-ink/78">{formatMoney(totals.target, currency)}</span>
       </div>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink/[0.09]"><span className="block h-full rounded-full bg-forest transition-[width] duration-700 ease-out" style={{ width: `${percentage}%` }} /></div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink/[0.09]"><span className={`block h-full rounded-full transition-[width] duration-700 ease-out ${progressTone}`} style={{ width: `${percentage}%` }} /></div>
       <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-normal text-ink/38">
         <span>Đã nạp: <strong className="font-normal text-ink/62">{formatMoney(totals.contributed, currency)}</strong></span>
         <span className="text-right">Còn thiếu: <strong className="font-normal text-coral">{formatMoney(totals.remaining, currency)}</strong></span>
@@ -226,7 +231,7 @@ function FundPlanOverview({ pockets, currency, onEdit }) {
       <section className="rounded-[16px] border border-ink/[0.065] bg-paper/90 px-5 py-8 text-center shadow-card">
         <Landmark className="mx-auto size-7 text-forest/55" />
         <div className="mt-3 text-sm font-medium text-ink">Chưa có kế hoạch nạp quỹ</div>
-        <p className="mx-auto mt-1.5 max-w-xs text-[11px] leading-5 text-ink/42">Tạo các quỹ cần nạp và đặt số tiền mỗi thành viên phải đóng hàng tháng.</p>
+        <p className="mx-auto mt-1.5 max-w-xs text-[11px] leading-5 text-ink/42">Thiết lập kế hoạch chi tiêu trước; các danh mục sẽ tự xuất hiện và chia đều cho thành viên.</p>
         <button type="button" className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-[11px] bg-forest px-4 text-xs font-medium text-white shadow-sm" onClick={onEdit}><Pencil className="size-3.5" /> Thiết lập quỹ</button>
       </section>
     );
@@ -243,13 +248,15 @@ function FundPlanOverview({ pockets, currency, onEdit }) {
 }
 
 function FundPlanCard({ pocket, currency, index }) {
+  const progressTone = pocket.monthlyRemaining > 0 ? 'bg-coral' : 'bg-forest';
+
   return (
     <article className="animate-rise-in rounded-[16px] border border-ink/[0.065] bg-paper/90 p-3.5 shadow-card" style={{ animationDelay: `${Math.min(index * 35, 180)}ms` }}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5"><FundPocketIcon pocket={pocket} /><span className="truncate text-sm font-medium text-ink">{pocket.name}</span></div>
         <span className="shrink-0 text-xs font-normal text-ink/72">{formatMoney(pocket.monthlyTarget, currency)}</span>
       </div>
-      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-ink/[0.09]"><span className="block h-full rounded-full transition-[width] duration-700" style={{ width: `${pocket.monthlyPercentage}%`, backgroundColor: pocket.color }} /></div>
+      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-ink/[0.09]"><span className={`block h-full rounded-full transition-[width] duration-700 ${progressTone}`} style={{ width: `${pocket.monthlyPercentage}%` }} /></div>
       <div className="mt-1.5 flex items-center justify-between text-[10px] font-normal text-ink/38"><span>Đã nạp: {formatMoney(pocket.monthlyContributed, currency)}</span><span className={pocket.monthlyRemaining > 0 ? 'text-coral' : 'text-forest'}>{pocket.monthlyRemaining > 0 ? `Còn ${formatMoney(pocket.monthlyRemaining, currency)}` : 'Đã đủ'}</span></div>
       <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
         {pocket.memberTargets.map((member) => (
@@ -269,7 +276,7 @@ function FundPlanEditor({ pockets, members, currency, values, saving, onChange, 
   return (
     <section className="space-y-2.5">
       <div className="rounded-[14px] border border-ink/[0.065] bg-paper/90 px-3.5 py-2.5 shadow-card">
-        <div className="flex items-center justify-between gap-3"><div><div className="text-sm font-medium text-ink">Chỉ tiêu mỗi tháng</div><p className="mt-0.5 text-[10px] font-normal text-ink/38">Mọi danh mục chi tiêu đều có sẵn; tổng quỹ được tính từ từng thành viên.</p></div><Users className="size-5 shrink-0 text-forest/65" /></div>
+        <div className="flex items-center justify-between gap-3"><div><div className="text-sm font-medium text-ink">Chỉ tiêu mỗi tháng</div><p className="mt-0.5 text-[10px] font-normal text-ink/38">Tự động lấy theo kế hoạch chi tiêu và chia đều cho mọi người. Bạn có thể chỉnh riêng từng người.</p></div><Users className="size-5 shrink-0 text-forest/65" /></div>
       </div>
 
       {pockets.map((pocket, index) => {
@@ -293,7 +300,7 @@ function FundPlanEditor({ pockets, members, currency, values, saving, onChange, 
                     <label htmlFor={`fund-target-${pocket.id}-${member.id}`} className="min-w-0 truncate text-[10px] font-normal text-ink/55">{member.displayName}</label>
                   </div>
                   <div className="relative mt-1 border-b border-ink/10">
-                    <input id={`fund-target-${pocket.id}-${member.id}`} className="h-7 w-full border-0 bg-transparent pl-0 pr-5 text-right text-[12px] font-normal tabular-nums text-ink outline-none placeholder:text-[11px] placeholder:text-ink/22 focus:border-0 focus:outline-none focus:ring-0" inputMode="numeric" value={formatInputAmount(values[pocket.id]?.[member.id])} onChange={(event) => onChange(pocket.id, member.id, event.target.value.replace(/\D/g, '').slice(0, 12))} onFocus={(event) => event.currentTarget.select()} placeholder="0" disabled={saving} />
+                    <MoneyInput id={`fund-target-${pocket.id}-${member.id}`} className="money-input h-7 w-full border-0 bg-transparent pl-0 pr-5 text-right text-[12px] font-normal tabular-nums text-ink outline-none placeholder:text-[11px] placeholder:text-ink/22 focus:border-0 focus:outline-none focus:ring-0" inputMode="numeric" value={values[pocket.id]?.[member.id] || ''} onChange={(value) => onChange(pocket.id, member.id, value)} placeholder="0" disabled={saving} />
                     <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[10px] font-normal text-ink/32">{currency === 'VND' ? '₫' : currency}</span>
                   </div>
                 </div>
@@ -328,9 +335,4 @@ function createTargetDraft(pockets, members) {
 function FundPocketIcon({ pocket }) {
   if (!pocket.category) return <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: pocket.color }} />;
   return <span className="grid size-8 shrink-0 place-items-center rounded-[10px]" style={{ color: pocket.category.color, backgroundColor: `${pocket.category.color}14` }}><CategoryIcon name={pocket.category.icon} className="size-[17px]" strokeWidth={2.15} /></span>;
-}
-
-function formatInputAmount(value) {
-  if (!value) return '';
-  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Number(value));
 }

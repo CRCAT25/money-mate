@@ -85,11 +85,17 @@ router.delete('/:id', [param('id').isUUID()], validate, async (req, res) => {
     FROM categories c WHERE c.id = ? AND c.family_id = ?
   `).get(req.params.id, req.space.id);
   if (!category) return res.status(404).json({ message: 'Không tìm thấy danh mục.' });
-  if (Number(category.transaction_count) > 0) {
-    return res.status(409).json({ message: `Danh mục đang có ${category.transaction_count} giao dịch và chưa thể xóa.` });
-  }
   await db.transaction(async (transaction) => {
-    await transaction.prepare('UPDATE fund_pockets SET category_id = NULL WHERE category_id = ? AND family_id = ?').run(category.id, req.space.id);
+    await transaction.prepare('UPDATE transactions SET category_id = NULL WHERE category_id = ? AND family_id = ?').run(category.id, req.space.id);
+    await transaction.prepare(`
+      DELETE FROM fund_pocket_member_targets
+      WHERE pocket_id IN (SELECT id FROM fund_pockets WHERE category_id = ? AND family_id = ?)
+    `).run(category.id, req.space.id);
+    await transaction.prepare(`
+      UPDATE fund_pockets
+      SET category_id = NULL, is_archived = 1, monthly_target = 0
+      WHERE category_id = ? AND family_id = ?
+    `).run(category.id, req.space.id);
     await transaction.prepare('DELETE FROM categories WHERE id = ?').run(category.id);
   });
   await bumpFamilyRevision(db, req.space.id, { base: true, transactions: true });

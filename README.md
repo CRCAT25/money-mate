@@ -12,6 +12,7 @@ MoneyMate là web app quản lý tài chính chung cho hai thành viên trong gi
 - Báo cáo tháng, biểu đồ xu hướng 6 tháng, lọc theo thành viên/danh mục và xuất CSV.
 - Quản lý tên, email có xác nhận lại, ảnh đại diện, thành viên, loại tiền, ngôn ngữ, mật khẩu và tài khoản.
 - Gửi Web Push khi thành viên khác thêm khoản chi trong không gian Gia đình.
+- Danh sách mua sắm theo tháng, ước lượng giá tại Việt Nam bằng Gemini Google Search grounding và áp dụng ngân sách có kiểm soát.
 - Đồng bộ bằng Socket.IO khi chạy local và revision cache khi chạy trên Vercel serverless.
 
 ## Công nghệ
@@ -76,7 +77,7 @@ Project đã có `vercel.json` để deploy frontend và Express API chung một
 https://moneymate-theta.vercel.app
 ```
 
-Vercel project dùng Neon PostgreSQL thông qua `DATABASE_URL`. Các biến bắt buộc khác gồm `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `AUTH_LINK_MODE`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` và `VAPID_SUBJECT`. Chạy deploy mới bằng:
+Vercel project dùng Neon PostgreSQL thông qua `DATABASE_URL`. Các biến bắt buộc khác gồm `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `AUTH_LINK_MODE`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` và `VAPID_SUBJECT`. Để bật ước lượng giá, mỗi không gian tự tạo key trong Google AI Studio rồi dán vào mục Cài đặt của MoneyMate. Backend lưu key đã mã hóa; Vercel chỉ cần có `GEMINI_ENCRYPTION_KEY` và tùy chọn `GEMINI_MODEL=gemini-3.5-flash`. Chạy deploy mới bằng:
 
 ```bash
 vercel deploy --prod

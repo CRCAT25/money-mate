@@ -52,11 +52,11 @@ router.get(
     params.push(Number(req.query.limit || 100));
 
     const transactions = await getDb().prepare(`
-      SELECT t.*, c.name AS category_name, c.icon AS category_icon, c.color AS category_color,
+      SELECT t.*, COALESCE(c.name, t.category_name) AS category_display_name, c.icon AS category_icon, c.color AS category_color,
         u.display_name AS assigned_name, u.avatar_url AS assigned_avatar,
         fp.name AS fund_pocket_name, fp.color AS fund_pocket_color
       FROM transactions t
-      JOIN categories c ON c.id = t.category_id
+      LEFT JOIN categories c ON c.id = t.category_id
       JOIN users u ON u.id = t.assigned_to
       LEFT JOIN fund_pockets fp ON fp.id = t.fund_pocket_id
       WHERE ${where.join(' AND ')}
@@ -69,11 +69,11 @@ router.get(
 
 router.get('/:id', [param('id').isUUID()], validate, async (req, res) => {
   const transaction = await getDb().prepare(`
-    SELECT t.*, c.name AS category_name, c.icon AS category_icon, c.color AS category_color,
+    SELECT t.*, COALESCE(c.name, t.category_name) AS category_display_name, c.icon AS category_icon, c.color AS category_color,
       u.display_name AS assigned_name, u.avatar_url AS assigned_avatar,
       fp.name AS fund_pocket_name, fp.color AS fund_pocket_color
     FROM transactions t
-    JOIN categories c ON c.id = t.category_id
+    LEFT JOIN categories c ON c.id = t.category_id
     JOIN users u ON u.id = t.assigned_to
     LEFT JOIN fund_pockets fp ON fp.id = t.fund_pocket_id
     WHERE t.id = ? AND t.family_id = ?
@@ -101,12 +101,13 @@ router.post('/', transactionRules, validate, async (req, res) => {
     }
     await transaction.prepare(`
       INSERT INTO transactions
-        (id, family_id, category_id, created_by, assigned_to, type, amount, paid_from_fund, fund_pocket_id, transaction_date, note)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, family_id, category_id, category_name, created_by, assigned_to, type, amount, paid_from_fund, fund_pocket_id, transaction_date, note)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       transactionId,
       req.space.id,
       req.body.categoryId,
+      relation.category.name,
       req.user.id,
       req.user.id,
       req.body.type,
@@ -122,20 +123,19 @@ router.post('/', transactionRules, validate, async (req, res) => {
   if (saveError) return res.status(422).json({ message: saveError });
   emitFamily(req.space.id, 'transactions:changed', { action: 'created', id: transactionId });
   if (req.body.type === 'expense' && req.space.type === 'family') {
-    try {
-      await sendTransactionPush(db, {
-        spaceId: req.space.id,
-        actorId: req.user.id,
-        actorName: req.user.displayName,
-        amount: req.body.amount,
-        categoryName: relation.category.name,
-        currency: req.space.currency,
-        transactionId,
-      });
-    } catch (error) {
+    // The transaction is already durable; notification delivery must not block the save response.
+    void sendTransactionPush(db, {
+      spaceId: req.space.id,
+      actorId: req.user.id,
+      actorName: req.user.displayName,
+      amount: req.body.amount,
+      categoryName: relation.category.name,
+      currency: req.space.currency,
+      transactionId,
+    }).catch((error) => {
       // A notification outage must never make a successfully saved expense look failed.
       console.error('[MoneyMate] Could not dispatch transaction notification:', error.message);
-    }
+    });
   }
   res.status(201).json({ id: transactionId, message: 'Đã lưu giao dịch.' });
 });
@@ -163,11 +163,12 @@ router.patch('/:id', [param('id').isUUID(), ...transactionRules], validate, asyn
     }
     await transaction.prepare(`
       UPDATE transactions SET
-        category_id = ?, type = ?, amount = ?, paid_from_fund = ?, fund_pocket_id = ?, transaction_date = ?,
+        category_id = ?, category_name = ?, type = ?, amount = ?, paid_from_fund = ?, fund_pocket_id = ?, transaction_date = ?,
         note = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND family_id = ?
     `).run(
       req.body.categoryId,
+      relation.category.name,
       req.body.type,
       req.body.amount,
       paidFromFund ? 1 : 0,
@@ -217,9 +218,9 @@ function mapTransaction(transaction) {
     note: transaction.note,
     category: {
       id: transaction.category_id,
-      name: transaction.category_name,
-      icon: transaction.category_icon,
-      color: transaction.category_color,
+      name: transaction.category_display_name || transaction.category_name || 'Danh mục đã xóa',
+      icon: transaction.category_icon || 'Shapes',
+      color: transaction.category_color || '#8E938B',
     },
     assignedTo: {
       id: transaction.assigned_to,

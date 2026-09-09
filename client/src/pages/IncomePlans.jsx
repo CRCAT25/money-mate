@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CalendarCheck, CalendarRange, Check, LoaderCircle, Pencil, X } from 'lucide-react';
+import { CalendarCheck, CalendarRange, Check, LoaderCircle, Pencil, TrendingUp, X } from 'lucide-react';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
 import MoneyInput from '../components/ui/MoneyInput.jsx';
 import PlanModeTabs from '../components/plans/PlanModeTabs.jsx';
@@ -14,16 +14,13 @@ import { currentMonth, formatInputAmount, formatMoney, shiftMonth } from '../uti
 
 const emptyPlan = { month: '', planned: 0, spent: 0, remaining: 0, percentage: 0, items: [] };
 
-export default function Plans() {
+export default function IncomePlans() {
   const { family } = useAuth();
   const { touch, getCache, setCache, loadCache, prefetchPages, isPersonal } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
-  const initialPlanCache = getCache(`plans:${month}`);
-  const initialIncomeCache = getCache(`plans:income:${month}`);
+  const initialPlanCache = getCache(`plans:income:${month}`);
   const [data, setData] = useState(() => initialPlanCache?.data || emptyPlan);
-  const [incomeData, setIncomeData] = useState(() => initialIncomeCache?.data || null);
-  const [incomeLoading, setIncomeLoading] = useState(() => !initialIncomeCache);
   const [previousAmounts, setPreviousAmounts] = useState({});
   const [draftAmounts, setDraftAmounts] = useState({});
   const [loading, setLoading] = useState(() => !initialPlanCache);
@@ -34,7 +31,7 @@ export default function Plans() {
   const [saveOptionsOpen, setSaveOptionsOpen] = useState(false);
 
   useEffect(() => {
-    const cacheKey = `plans:${month}`;
+    const cacheKey = `plans:income:${month}`;
     let active = true;
     const cached = getCache(cacheKey);
     if (cached) {
@@ -45,7 +42,7 @@ export default function Plans() {
       setLoading(true);
     }
     loadCache(cacheKey, async () => {
-      const { data: nextData } = await api.get('/budgets', { params: { month } });
+      const { data: nextData } = await api.get('/budgets', { params: { month, type: 'income' } });
       return { data: nextData };
     })
       .then(({ data: nextData }) => {
@@ -56,30 +53,9 @@ export default function Plans() {
       .catch((error) => active && notify(errorMessage(error), 'error'))
       .finally(() => active && setLoading(false));
 
-    const cachedIncome = getCache(`plans:income:${month}`);
-    if (cachedIncome) {
-      setIncomeData(cachedIncome.data);
-      setIncomeLoading(false);
-    } else {
-      setIncomeData(null);
-      setIncomeLoading(true);
-    }
-    loadCache(`plans:income:${month}`, async () => {
-      const { data: nextIncomeData } = await api.get('/budgets', { params: { month, type: 'income' } });
-      return { data: nextIncomeData };
-    })
-      .then(({ data: nextIncomeData }) => {
-        if (!active) return;
-        setIncomeData(nextIncomeData);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (active) setIncomeLoading(false);
-      });
-
     const previousMonth = shiftMonth(month, -1);
-    loadCache(`plans:${previousMonth}`, async () => {
-      const { data: previousData } = await api.get('/budgets', { params: { month: previousMonth } });
+    loadCache(`plans:income:${previousMonth}`, async () => {
+      const { data: previousData } = await api.get('/budgets', { params: { month: previousMonth, type: 'income' } });
       return { data: previousData };
     }).then(({ data: previousData }) => {
       if (!active) return;
@@ -110,7 +86,7 @@ export default function Plans() {
   const chooseSaveScope = () => {
     const changes = getChanges();
     if (changes.some(({ amount }) => !Number.isInteger(amount) || amount < 0 || amount > 999999999999)) {
-      notify('Ngân sách không hợp lệ.', 'error');
+      notify('Kế hoạch thu nhập không hợp lệ.', 'error');
       return;
     }
     if (!changes.length) {
@@ -125,7 +101,7 @@ export default function Plans() {
     const changes = getChanges();
 
     if (changes.some(({ amount }) => !Number.isInteger(amount) || amount < 0 || amount > 999999999999)) {
-      notify('Ngân sách không hợp lệ.', 'error');
+      notify('Kế hoạch thu nhập không hợp lệ.', 'error');
       return;
     }
     if (!changes.length) {
@@ -139,6 +115,7 @@ export default function Plans() {
       const { data: saveResult } = await api.post('/budgets/batch', {
         month,
         scope,
+        type: 'income',
         items: changes.map(({ item, amount }) => ({ categoryId: item.category.id, amount })),
       });
       touch('base');
@@ -154,18 +131,20 @@ export default function Plans() {
         };
       });
       const plannedItems = nextItems.filter((item) => item.amount > 0);
+      const totalPlanned = plannedItems.reduce((total, item) => total + item.amount, 0);
+      const totalSpent = nextItems.reduce((total, item) => total + item.spent, 0);
       const nextData = {
         ...data,
         items: nextItems,
-        planned: plannedItems.reduce((total, item) => total + item.amount, 0),
-        spent: plannedItems.reduce((total, item) => total + item.spent, 0),
+        planned: totalPlanned,
+        spent: totalSpent,
+        remaining: totalPlanned - totalSpent,
+        percentage: totalPlanned ? Math.round((totalSpent / totalPlanned) * 100) : (totalSpent > 0 ? 100 : 0),
       };
-      nextData.remaining = nextData.planned - nextData.spent;
-      nextData.percentage = nextData.planned ? Math.round((nextData.spent / nextData.planned) * 100) : 0;
       setData(nextData);
       editingRef.current = false;
       setDraftAmounts(createDraftAmounts(nextData.items));
-      setCache(`plans:${month}`, { data: nextData });
+      setCache(`plans:income:${month}`, { data: nextData });
       void prefetchPages(month);
       setSaveOptionsOpen(false);
       setEditing(false);
@@ -178,7 +157,6 @@ export default function Plans() {
   };
 
   const draftTotal = Object.values(draftAmounts).reduce((total, amount) => total + Number(amount || 0), 0);
-  const totalIncome = (incomeData?.planned > 0 ? incomeData.planned : incomeData?.spent) || 0;
 
   return (
     <div className="mx-auto max-w-3xl space-y-3 sm:space-y-4">
@@ -188,13 +166,15 @@ export default function Plans() {
             <X className="size-[18px]" strokeWidth={2.2} />
           </button>
         ) : <span />}
-        <h1 className="truncate text-center font-editorial text-[21px] font-semibold tracking-[-0.025em] text-ink sm:text-2xl">{editing ? 'Chỉnh sửa ngân sách' : 'Chi tiêu'}</h1>
+        <h1 className="truncate text-center font-editorial text-[21px] font-semibold tracking-[-0.025em] text-ink sm:text-2xl">
+          {editing ? 'Chỉnh sửa kế hoạch thu nhập' : 'Thu nhập'}
+        </h1>
         <button
           type="button"
-          className={`grid size-9 place-items-center rounded-[11px] shadow-sm transition active:scale-95 ${editing ? 'bg-[#3B82D0] text-white' : 'bg-white/80 text-ink/55'}`}
+          className={`grid size-9 place-items-center rounded-[11px] shadow-sm transition active:scale-95 ${editing ? 'bg-[#2D8A72] text-white' : 'bg-white/80 text-ink/55'}`}
           onClick={editing ? chooseSaveScope : openEditor}
           disabled={saving || loading}
-          aria-label={editing ? 'Lưu kế hoạch' : 'Chỉnh sửa kế hoạch'}
+          aria-label={editing ? 'Lưu kế hoạch thu nhập' : 'Chỉnh sửa kế hoạch thu nhập'}
         >
           {saving ? <LoaderCircle className="size-[18px] animate-spin" /> : editing ? <Check className="size-[19px]" strokeWidth={2.5} /> : <Pencil className="size-[16px]" strokeWidth={2.1} />}
         </button>
@@ -206,24 +186,20 @@ export default function Plans() {
         <MonthPicker value={month} onChange={setMonth} dense fullWidth variant="budget" />
       </div>
 
-      {loading ? <PlanPageSkeleton editing={editing} /> : editing ? (
-        <BudgetEditor
+      {loading ? <IncomePageSkeleton editing={editing} /> : editing ? (
+        <IncomeEditor
           items={data.items}
           currency={family.currency}
           draftAmounts={draftAmounts}
           previousAmounts={previousAmounts}
           total={draftTotal}
-          totalIncome={totalIncome}
-          incomePlanned={incomeData?.planned || 0}
-          incomeSpent={incomeData?.spent || 0}
-          incomeLoading={incomeLoading}
           saving={saving}
           onChange={(categoryId, value) => setDraftAmounts((current) => ({ ...current, [categoryId]: value }))}
         />
       ) : (
         <>
-          <BudgetSummary data={data} currency={family.currency} />
-          <BudgetOverview
+          <IncomeSummary data={data} currency={family.currency} />
+          <IncomeOverview
             items={data.items}
             currency={family.currency}
             view={categoryView}
@@ -233,7 +209,7 @@ export default function Plans() {
         </>
       )}
 
-      <SaveBudgetOptions
+      <SaveIncomeOptions
         open={saveOptionsOpen}
         saving={saving}
         onClose={() => { if (!saving) setSaveOptionsOpen(false); }}
@@ -244,63 +220,71 @@ export default function Plans() {
   );
 }
 
-function BudgetSummary({ data, currency }) {
-  const over = data.remaining < 0;
-  const hasBudget = data.planned > 0;
-  const spentPercentage = hasBudget ? Math.min(100, Math.max(0, (data.spent / data.planned) * 100)) : 0;
+function IncomeSummary({ data, currency }) {
+  const hasPlan = data.planned > 0;
+  const reached = hasPlan && data.spent >= data.planned;
+  const percentage = hasPlan
+    ? Math.min(100, Math.max(0, (data.spent / data.planned) * 100))
+    : (data.spent > 0 ? 100 : 0);
 
   return (
     <section className="overflow-hidden rounded-[16px] border border-ink/[0.07] bg-paper/90 px-4 py-3 shadow-card sm:px-5">
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-sm font-semibold tracking-[-0.015em] text-ink">Tổng ngân sách</h2>
-        <span className="shrink-0 whitespace-nowrap text-right text-xs font-medium text-ink/78">{formatMoney(data.planned, currency)}</span>
+        <h2 className="text-sm font-semibold tracking-[-0.015em] text-ink">Tổng kế hoạch thu nhập</h2>
+        <span className="shrink-0 whitespace-nowrap text-right text-xs font-medium text-[#2D8A72]">{formatMoney(data.planned, currency)}</span>
       </div>
 
       <div
         className="mt-3 h-2 overflow-hidden rounded-full bg-ink/[0.09]"
         role="img"
-        aria-label={`Đã chi ${formatMoney(data.spent, currency)}, ${over ? 'vượt' : 'còn'} ${formatMoney(Math.abs(data.remaining), currency)}`}
+        aria-label={`Đã thu ${formatMoney(data.spent, currency)} trên kế hoạch ${formatMoney(data.planned, currency)}`}
       >
-        <span className={`block h-full rounded-full transition-[width] duration-700 ease-out ${over ? 'bg-[#E45757]' : 'bg-[#3B82D0]'}`} style={{ width: `${spentPercentage}%` }} />
+        <span className="block h-full rounded-full bg-[#2D8A72] transition-[width] duration-700 ease-out" style={{ width: `${percentage}%` }} />
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-normal text-ink/38">
         <span className="truncate">Thực tế: <strong className="font-normal text-ink/62">{formatMoney(data.spent, currency)}</strong></span>
-        <span className={`truncate text-right ${over ? 'text-[#E45757]' : ''}`}>{over ? 'Vượt' : 'Còn lại'}: <strong className={`font-normal ${over ? 'text-[#E45757]' : 'text-ink/62'}`}>{formatMoney(Math.abs(data.remaining), currency)}</strong></span>
+        {hasPlan ? (
+          <span className={`truncate text-right ${reached ? 'text-[#2D8A72]' : ''}`}>
+            {reached ? 'Đã đạt' : 'Còn thiếu'}: <strong className={`font-normal ${reached ? 'text-[#2D8A72]' : 'text-ink/62'}`}>{formatMoney(Math.abs(data.planned - data.spent), currency)}</strong>
+          </span>
+        ) : (
+          <span className="truncate text-right text-ink/40">{data.spent > 0 ? 'Chưa đặt kế hoạch' : 'Chưa có thu nhập'}</span>
+        )}
       </div>
     </section>
   );
 }
 
-function BudgetOverview({ items, currency, view, onViewChange, onEdit }) {
+function IncomeOverview({ items, currency, view, onViewChange, onEdit }) {
   const plannedItems = items.filter((item) => item.amount > 0);
   const visibleItems = view === 'all' ? items : plannedItems;
 
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between gap-3 px-1">
-        <h2 className="shrink-0 text-sm font-semibold tracking-[-0.015em] text-ink">Chi tiết ngân sách</h2>
+        <h2 className="shrink-0 text-sm font-semibold tracking-[-0.015em] text-ink">Chi tiết thu nhập</h2>
         <div className="grid min-w-0 grid-cols-2 rounded-[10px] bg-ink/[0.055] p-0.5">
-          <BudgetViewButton active={view === 'all'} label="Tất cả danh mục" count={items.length} onClick={() => onViewChange('all')} />
-          <BudgetViewButton active={view === 'planned'} label="Đã thiết lập" count={plannedItems.length} onClick={() => onViewChange('planned')} />
+          <IncomeViewButton active={view === 'all'} label="Tất cả danh mục" count={items.length} onClick={() => onViewChange('all')} />
+          <IncomeViewButton active={view === 'planned'} label="Đã thiết lập" count={plannedItems.length} onClick={() => onViewChange('planned')} />
         </div>
       </div>
       {visibleItems.length ? (
         <div className="overflow-hidden rounded-[16px] border border-ink/[0.065] bg-paper/90 px-3.5 shadow-card sm:px-4">
-          {visibleItems.map((item, index) => <BudgetViewRow key={item.category.id} item={item} currency={currency} index={index} />)}
+          {visibleItems.map((item, index) => <IncomeViewRow key={item.category.id} item={item} currency={currency} index={index} />)}
         </div>
       ) : (
         <div className="rounded-[16px] border border-ink/[0.065] bg-paper/90 px-5 py-8 text-center shadow-card">
-          <div className="text-sm font-medium text-ink">Chưa có ngân sách tháng này</div>
-          <p className="mx-auto mt-1.5 max-w-xs text-[11px] leading-5 text-ink/42">Thiết lập ngân sách theo danh mục để theo dõi số đã chi và phần còn lại.</p>
-          <button type="button" className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-[11px] bg-[#3B82D0] px-4 text-xs font-medium text-white shadow-sm" onClick={onEdit}><Pencil className="size-3.5" /> Thiết lập ngân sách</button>
+          <div className="text-sm font-medium text-ink">Chưa có kế hoạch thu nhập tháng này</div>
+          <p className="mx-auto mt-1.5 max-w-xs text-[11px] leading-5 text-ink/42">Thiết lập kế hoạch theo từng nguồn thu để theo dõi dòng tiền vào.</p>
+          <button type="button" className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-[11px] bg-[#2D8A72] px-4 text-xs font-medium text-white shadow-sm" onClick={onEdit}><Pencil className="size-3.5" /> Thiết lập kế hoạch</button>
         </div>
       )}
     </section>
   );
 }
 
-function BudgetViewButton({ active, label, count, onClick }) {
+function IncomeViewButton({ active, label, count, onClick }) {
   return (
     <button
       type="button"
@@ -313,12 +297,12 @@ function BudgetViewButton({ active, label, count, onClick }) {
   );
 }
 
-function BudgetViewRow({ item, currency, index }) {
-  const over = item.remaining < 0;
-  const spentPercentage = item.amount > 0
+function IncomeViewRow({ item, currency, index }) {
+  const hasPlan = item.amount > 0;
+  const reached = hasPlan && item.spent >= item.amount;
+  const percentage = hasPlan
     ? Math.min(100, Math.max(0, (item.spent / item.amount) * 100))
     : item.spent > 0 ? 100 : 0;
-  const shoppingItems = item.shoppingItems || [];
 
   return (
     <article className="animate-rise-in border-b border-ink/[0.07] py-3 last:border-b-0" style={{ animationDelay: `${Math.min(index * 30, 180)}ms` }}>
@@ -329,61 +313,36 @@ function BudgetViewRow({ item, currency, index }) {
           </span>
           <span className="min-w-0 truncate text-sm font-medium tracking-[-0.015em] text-ink">{item.category.name}</span>
         </div>
-        <span className="shrink-0 whitespace-nowrap text-right text-xs font-medium text-ink/78">{formatMoney(item.amount, currency)}</span>
+        <span className={`shrink-0 whitespace-nowrap text-right text-xs font-medium ${item.amount > 0 ? 'text-[#2D8A72]' : 'text-ink/35'}`}>{formatMoney(item.amount, currency)}</span>
       </div>
-      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-ink/[0.09]" role="img" aria-label={`${item.category.name}: đã chi ${formatMoney(item.spent, currency)} trên ngân sách ${formatMoney(item.amount, currency)}`}>
-        <span className={`block h-full rounded-full transition-[width] duration-700 ease-out ${over ? 'bg-[#E45757]' : 'bg-[#3B82D0]'}`} style={{ width: `${spentPercentage}%` }} />
+      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-ink/[0.09]" role="img" aria-label={`${item.category.name}: đã thu ${formatMoney(item.spent, currency)} trên kế hoạch ${formatMoney(item.amount, currency)}`}>
+        <span className="block h-full rounded-full bg-[#2D8A72] transition-[width] duration-700 ease-out" style={{ width: `${percentage}%` }} />
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] font-normal text-ink/34">
         <span className="truncate">Thực tế: <strong className="font-normal text-ink/58">{formatMoney(item.spent, currency)}</strong></span>
-        <span className={`truncate text-right ${over ? 'text-[#E45757]' : ''}`}>{over ? 'Vượt' : 'Còn lại'}: <strong className={`font-normal ${over ? 'text-[#E45757]' : 'text-ink/58'}`}>{formatMoney(Math.abs(item.remaining), currency)}</strong></span>
+        {hasPlan ? (
+          <span className={`truncate text-right ${reached ? 'text-[#2D8A72]' : ''}`}>
+            {reached ? 'Đã đạt' : 'Còn thiếu'}: <strong className={`font-normal ${reached ? 'text-[#2D8A72]' : 'text-ink/58'}`}>{formatMoney(Math.abs(item.amount - item.spent), currency)}</strong>
+          </span>
+        ) : (
+          <span className="truncate text-right text-ink/35">{item.spent > 0 ? 'Chưa đặt kế hoạch' : ''}</span>
+        )}
       </div>
-      {shoppingItems.length > 0 && (
-        <div className="mt-2.5 rounded-[10px] bg-mint/45 px-2.5 py-2 text-[10px] text-forest/80">
-          <div className="font-medium">Gồm {shoppingItems.length} món mua sắm</div>
-          <div className="mt-1 space-y-0.5 text-ink/55">
-            {shoppingItems.slice(0, 3).map((shoppingItem) => (
-              <div key={shoppingItem.id} className="flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate">{shoppingItem.name} · {shoppingItem.quantity} {shoppingItem.unit || 'món'}</span>
-                <span className="shrink-0 tabular-nums">{formatMoney(shoppingItem.total, currency)}</span>
-              </div>
-            ))}
-            {shoppingItems.length > 3 && <div className="text-ink/40">+ {shoppingItems.length - 3} món khác</div>}
-          </div>
-        </div>
-      )}
     </article>
   );
 }
 
-function BudgetEditor({ items, currency, draftAmounts, previousAmounts, total, totalIncome = 0, incomePlanned = 0, incomeSpent = 0, incomeLoading = false, saving, onChange }) {
+function IncomeEditor({ items, currency, draftAmounts, previousAmounts, total, saving, onChange }) {
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-4 rounded-[16px] border border-ink/[0.065] bg-paper/90 px-4 py-3 shadow-card">
-        <div>
-          <span className="text-sm font-medium text-ink">Tổng thu nhập</span>
-          {!incomeLoading && incomePlanned > 0 && incomeSpent > 0 && (
-            <p className="text-[10px] text-ink/40">Thực tế đã thu: {formatMoney(incomeSpent, currency)}</p>
-          )}
-          {!incomeLoading && incomePlanned === 0 && incomeSpent > 0 && (
-            <p className="text-[10px] text-ink/40">Thực tế phát sinh</p>
-          )}
-        </div>
-        {incomeLoading ? (
-          <Skeleton className="h-5 w-24 rounded" />
-        ) : (
-          <span className="shrink-0 whitespace-nowrap text-base font-normal tabular-nums text-[#2D8A72]">{formatMoney(totalIncome, currency)}</span>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between gap-4 rounded-[16px] border border-ink/[0.065] bg-paper/90 px-4 py-3 shadow-card">
-        <span className="text-sm font-medium text-ink">Tổng ngân sách</span>
-        <span className="shrink-0 whitespace-nowrap text-base font-normal tabular-nums text-ink">{formatMoney(total, currency)}</span>
+        <span className="text-sm font-medium text-ink">Tổng kế hoạch thu nhập</span>
+        <span className="shrink-0 whitespace-nowrap text-base font-normal tabular-nums text-[#2D8A72]">{formatMoney(total, currency)}</span>
       </div>
       <p className="px-1 text-[10px] font-normal text-ink/38">Tổng được tự động tính từ các hạng mục bên dưới.</p>
       <div className="overflow-hidden rounded-[16px] border border-ink/[0.065] bg-paper/90 px-3.5 shadow-card sm:px-4">
         {items.map((item, index) => (
-          <BudgetEditRow
+          <IncomeEditRow
             key={item.category.id}
             item={item}
             currency={currency}
@@ -399,9 +358,9 @@ function BudgetEditor({ items, currency, draftAmounts, previousAmounts, total, t
   );
 }
 
-function BudgetEditRow({ item, currency, value, previousAmount, index, disabled, onChange }) {
+function IncomeEditRow({ item, currency, value, previousAmount, index, disabled, onChange }) {
   const currencyLabel = currency === 'VND' ? '₫' : currency;
-  const inputId = `budget-${item.category.id}`;
+  const inputId = `income-plan-${item.category.id}`;
   return (
     <article className="animate-rise-in flex min-h-[54px] items-center gap-2.5 border-b border-ink/[0.07] py-2 last:border-b-0" style={{ animationDelay: `${Math.min(index * 24, 160)}ms` }}>
       <span className="grid size-8 shrink-0 place-items-center rounded-[10px]" style={{ color: item.category.color, backgroundColor: `${item.category.color}12` }}>
@@ -425,19 +384,19 @@ function BudgetEditRow({ item, currency, value, previousAmount, index, disabled,
   );
 }
 
-function SaveBudgetOptions({ open, saving, onClose, onSaveMonth, onSaveFuture }) {
+function SaveIncomeOptions({ open, saving, onClose, onSaveMonth, onSaveFuture }) {
   return (
     <Modal open={open} title="Chọn cách lưu" onClose={onClose} compact>
-      <p className="-mt-1 text-[12px] font-normal leading-5 text-ink/48">Bạn muốn áp dụng những thay đổi ngân sách này trong khoảng thời gian nào?</p>
+      <p className="-mt-1 text-[12px] font-normal leading-5 text-ink/48">Bạn muốn áp dụng những thay đổi kế hoạch thu nhập này trong khoảng thời gian nào?</p>
       <div className="mt-5 space-y-2.5">
         <button type="button" className="flex min-h-[62px] w-full items-center gap-3 rounded-[15px] border border-ink/[0.07] bg-white/70 px-3.5 text-left transition active:scale-[0.985] hover:bg-white" onClick={onSaveMonth} disabled={saving}>
-          <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-[#3B82D0]/10 text-[#3B82D0]"><CalendarCheck className="size-[19px]" /></span>
+          <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-[#2D8A72]/10 text-[#2D8A72]"><CalendarCheck className="size-[19px]" /></span>
           <span className="min-w-0 flex-1"><strong className="block text-[13px] font-semibold text-ink">Chỉ thay đổi tháng này</strong><small className="mt-0.5 block text-[10px] font-normal leading-4 text-ink/42">Các tháng sau giữ nguyên kế hoạch hiện có.</small></span>
           {saving && <LoaderCircle className="size-4 animate-spin text-ink/35" />}
         </button>
         <button type="button" className="flex min-h-[62px] w-full items-center gap-3 rounded-[15px] border border-ink/[0.07] bg-mint/55 px-3.5 text-left transition active:scale-[0.985] hover:bg-mint/75" onClick={onSaveFuture} disabled={saving}>
           <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-forest/10 text-forest"><CalendarRange className="size-[19px]" /></span>
-          <span className="min-w-0 flex-1"><strong className="block text-[13px] font-semibold text-ink">Tháng này và các tháng sau</strong><small className="mt-0.5 block text-[10px] font-normal leading-4 text-ink/42">Dùng làm mức ngân sách mới cho những tháng tiếp theo.</small></span>
+          <span className="min-w-0 flex-1"><strong className="block text-[13px] font-semibold text-ink">Tháng này và các tháng sau</strong><small className="mt-0.5 block text-[10px] font-normal leading-4 text-ink/42">Dùng làm mức kế hoạch thu nhập mới cho những tháng tiếp theo.</small></span>
           {saving && <LoaderCircle className="size-4 animate-spin text-forest/45" />}
         </button>
         <button type="button" className="min-h-11 w-full rounded-xl text-xs font-medium text-ink/45 transition hover:bg-ink/[0.04]" onClick={onClose} disabled={saving}>Bỏ qua</button>
@@ -446,14 +405,13 @@ function SaveBudgetOptions({ open, saving, onClose, onSaveMonth, onSaveFuture })
   );
 }
 
-function PlanPageSkeleton({ editing }) {
+function IncomePageSkeleton({ editing }) {
   return (
-    <div className="space-y-3" aria-label="Đang tải ngân sách" role="status">
-      {editing && <Skeleton className="h-[62px] rounded-[16px]" />}
+    <div className="space-y-3" aria-label="Đang tải kế hoạch thu nhập" role="status">
       <Skeleton className="h-[62px] rounded-[16px]" />
       {!editing && <div className="flex items-center justify-between px-1"><Skeleton className="h-4 w-36" /><Skeleton className="h-3 w-16" /></div>}
       <div className="overflow-hidden rounded-[16px] border border-ink/[0.06] bg-white/50 px-3.5">
-        {Array.from({ length: 10 }, (_, index) => (
+        {Array.from({ length: 5 }, (_, index) => (
           <div key={index} className="border-b border-ink/[0.06] py-3 last:border-0">
             <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2.5"><Skeleton className="size-8 shrink-0 rounded-[10px]" /><Skeleton className="h-3.5 w-24" /></div><Skeleton className="h-3.5 w-24" /></div>
             {!editing && <><div className="mt-2.5 flex items-center gap-2.5"><Skeleton className="h-1.5 flex-1 rounded-full" /><Skeleton className="h-3 w-8" /></div><div className="mt-2 flex items-center justify-between"><Skeleton className="h-3 w-28" /><Skeleton className="h-3 w-24" /></div></>}

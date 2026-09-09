@@ -2,7 +2,7 @@ import express from 'express';
 import { body, param, query } from 'express-validator';
 import { authenticate } from '../auth.js';
 import { getDb } from '../db.js';
-import { ensureDefaultFundPocket, ensureExpenseFundPockets, getFundTotals, lockFund } from '../fund.js';
+import { ensureDefaultFundPocket, ensureExpenseFundPockets, getFundTotals, lockFund, syncMissingFundTargetsFromBudgets } from '../fund.js';
 import { emitFamily } from '../realtime.js';
 import { bumpFamilyRevision } from '../revisions.js';
 import { requireFamilySpace, resolveSpace } from '../spaces.js';
@@ -19,9 +19,12 @@ router.get(
   [query('month').optional().matches(/^\d{4}-\d{2}$/).withMessage('Tháng không hợp lệ.')],
   validate,
   async (req, res) => {
-    await ensureDefaultFundPocket(getDb(), req.space.id);
-    await ensureExpenseFundPockets(getDb(), req.space.id);
-    res.json(await buildFundSummary(getDb(), req.space.id, req.query.month || new Date().toISOString().slice(0, 7)));
+    const db = getDb();
+    const month = req.query.month || new Date().toISOString().slice(0, 7);
+    await ensureDefaultFundPocket(db, req.space.id);
+    await ensureExpenseFundPockets(db, req.space.id);
+    await syncMissingFundTargetsFromBudgets(db, req.space.id, month);
+    res.json(await buildFundSummary(db, req.space.id, month));
   },
 );
 
@@ -103,6 +106,75 @@ router.post(
 );
 
 router.post(
+  '/pockets/targets',
+  [
+    body('items').isArray({ min: 1, max: 30 }).withMessage('Danh sách mục tiêu không hợp lệ.'),
+    body('items.*.pocketId').isUUID().withMessage('Quỹ nhỏ không hợp lệ.'),
+    body('items.*.monthlyTarget').isInt({ min: 0, max: 999999999999 }).withMessage('Mục tiêu tháng không hợp lệ.'),
+    body('items.*.members').isArray({ min: 0, max: 50 }).withMessage('Chỉ tiêu thành viên không hợp lệ.'),
+    body('items.*.members.*.userId').isUUID().withMessage('Thành viên không hợp lệ.'),
+    body('items.*.members.*.amount').isInt({ min: 0, max: 999999999999 }).withMessage('Chỉ tiêu đóng góp không hợp lệ.'),
+  ],
+  validate,
+  async (req, res) => {
+    const db = getDb();
+    const items = req.body.items.map((item) => ({
+      pocketId: item.pocketId,
+      monthlyTarget: Number(item.monthlyTarget),
+      members: item.members.map((member) => ({ userId: member.userId, amount: Number(member.amount) })),
+    }));
+    const pocketIds = [...new Set(items.map((item) => item.pocketId))];
+    if (pocketIds.length !== items.length) return res.status(422).json({ message: 'Mỗi quỹ chỉ được cập nhật một lần.' });
+
+    const pockets = await db.prepare(`
+      SELECT id, name FROM fund_pockets
+      WHERE family_id = ? AND id IN (${pocketIds.map(() => '?').join(', ')})
+    `).all(req.space.id, ...pocketIds);
+    if (pockets.length !== pocketIds.length) return res.status(404).json({ message: 'Không tìm thấy quỹ nhỏ.' });
+
+    const allMemberIds = [...new Set(items.flatMap((item) => item.members.map((member) => member.userId)))];
+    if (allMemberIds.length) {
+      const members = await db.prepare(`
+        SELECT user_id FROM family_members
+        WHERE family_id = ? AND user_id IN (${allMemberIds.map(() => '?').join(', ')})
+      `).all(req.space.id, ...allMemberIds);
+      if (members.length !== allMemberIds.length) return res.status(422).json({ message: 'Có người không còn thuộc gia đình này.' });
+    }
+
+    const pocketNames = new Map(pockets.map((pocket) => [pocket.id, pocket.name]));
+    for (const item of items) {
+      const uniqueMemberIds = new Set(item.members.map((member) => member.userId));
+      if (uniqueMemberIds.size !== item.members.length) {
+        return res.status(422).json({ message: 'Mỗi thành viên chỉ được đặt chỉ tiêu một lần.' });
+      }
+      const allocated = item.members.reduce((sum, member) => sum + member.amount, 0);
+      if (allocated !== item.monthlyTarget) {
+        return res.status(422).json({ message: `Tổng chỉ tiêu từng người phải bằng mục tiêu của quỹ ${pocketNames.get(item.pocketId)}.` });
+      }
+    }
+
+    await db.transaction(async (transaction) => {
+      for (const item of items) {
+        await transaction.prepare('UPDATE fund_pockets SET monthly_target = ? WHERE id = ? AND family_id = ?')
+          .run(item.monthlyTarget, item.pocketId, req.space.id);
+        await transaction.prepare('DELETE FROM fund_pocket_member_targets WHERE pocket_id = ?').run(item.pocketId);
+        for (const member of item.members) {
+          if (!member.amount) continue;
+          await transaction.prepare(`
+            INSERT INTO fund_pocket_member_targets (pocket_id, user_id, target_amount)
+            VALUES (?, ?, ?)
+          `).run(item.pocketId, member.userId, member.amount);
+        }
+      }
+      await bumpFamilyRevision(transaction, req.space.id, { transactions: true });
+    });
+
+    emitFamily(req.space.id, 'transactions:changed', { action: 'fund-targets-updated', ids: pocketIds });
+    res.json({ message: 'Đã cập nhật kế hoạch nạp quỹ.' });
+  },
+);
+
+router.post(
   '/contributions',
   [
     body('contributionDate').isISO8601({ strict: true }).withMessage('Ngày nạp quỹ không hợp lệ.'),
@@ -119,6 +191,7 @@ router.post(
       .get(req.body.pocketId, req.space.id);
     if (!pocket) return res.status(404).json({ message: 'Không tìm thấy quỹ nhận tiền.' });
     const contributions = req.body.contributions.map((item) => ({
+      id: id(),
       userId: item.userId,
       amount: Number(item.amount),
     }));
@@ -151,7 +224,7 @@ router.post(
             (id, batch_id, family_id, fund_pocket_id, contributor_user_id, contributor_name, amount, contribution_date, note, created_by)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          id(),
+          contribution.id,
           batchId,
           req.space.id,
           pocket.id,
@@ -166,7 +239,100 @@ router.post(
       await bumpFamilyRevision(transaction, req.space.id, { transactions: true });
     });
     emitFamily(req.space.id, 'transactions:changed', { action: 'fund-contributed', batchId });
-    res.status(201).json({ batchId, total, message: `Đã nạp tiền vào ${pocket.name}.` });
+    res.status(201).json({ batchId, contributionIds: contributions.map((contribution) => contribution.id), total, message: `Đã nạp tiền vào ${pocket.name}.` });
+  },
+);
+
+router.get(
+  '/contributions/:id',
+  [param('id').isUUID().withMessage('Khoản nạp quỹ không hợp lệ.')],
+  validate,
+  async (req, res) => {
+    const contribution = await getDb().prepare(`
+      SELECT fc.id, fc.amount, fc.contribution_date, fc.note,
+        fc.contributor_user_id, fc.contributor_name,
+        fp.id AS pocket_id, fp.name AS pocket_name, fp.color AS pocket_color
+      FROM fund_contributions fc
+      JOIN fund_pockets fp ON fp.id = fc.fund_pocket_id
+      WHERE fc.id = ? AND fc.family_id = ?
+    `).get(req.params.id, req.space.id);
+    if (!contribution) return res.status(404).json({ message: 'Không tìm thấy khoản nạp quỹ.' });
+    res.json({
+      id: contribution.id,
+      amount: Number(contribution.amount),
+      contributionDate: contribution.contribution_date,
+      note: contribution.note || '',
+      contributor: { id: contribution.contributor_user_id, displayName: contribution.contributor_name },
+      pocket: { id: contribution.pocket_id, name: contribution.pocket_name, color: contribution.pocket_color },
+    });
+  },
+);
+
+router.patch(
+  '/contributions/:id',
+  [
+    param('id').isUUID().withMessage('Khoản nạp quỹ không hợp lệ.'),
+    body('amount').isInt({ min: 1, max: 999999999999 }).withMessage('Số tiền nạp cần lớn hơn 0.'),
+    body('contributionDate').optional().isISO8601({ strict: true }).withMessage('Ngày nạp quỹ không hợp lệ.'),
+    body('pocketId').optional().isUUID().withMessage('Quỹ nhận tiền không hợp lệ.'),
+    body('note').optional({ nullable: true }).trim().isLength({ max: 240 }).withMessage('Ghi chú tối đa 240 ký tự.'),
+  ],
+  validate,
+  async (req, res) => {
+    const db = getDb();
+    const result = await db.transaction(async (transaction) => {
+      await lockFund(transaction, req.space.id);
+      const existing = await transaction.prepare(`
+        SELECT id, fund_pocket_id, contribution_date, note
+        FROM fund_contributions
+        WHERE id = ? AND family_id = ?
+      `).get(req.params.id, req.space.id);
+      if (!existing) return { status: 404, message: 'Không tìm thấy khoản nạp quỹ.' };
+
+      const nextPocketId = req.body.pocketId || existing.fund_pocket_id;
+      if (req.body.pocketId) {
+        const pocket = await transaction.prepare(`
+          SELECT id FROM fund_pockets
+          WHERE id = ? AND family_id = ? AND is_archived = 0
+        `).get(req.body.pocketId, req.space.id);
+        if (!pocket) return { status: 404, message: 'Không tìm thấy quỹ nhận tiền.' };
+      }
+      const nextDate = req.body.contributionDate?.slice(0, 10) || existing.contribution_date;
+      const nextNote = req.body.note === undefined ? existing.note : req.body.note?.trim() || null;
+
+      await transaction.prepare(`
+        UPDATE fund_contributions
+        SET amount = ?, fund_pocket_id = ?, contribution_date = ?, note = ?
+        WHERE id = ? AND family_id = ?
+      `).run(req.body.amount, nextPocketId, nextDate, nextNote, req.params.id, req.space.id);
+      await bumpFamilyRevision(transaction, req.space.id, { transactions: true });
+      return { pocketId: nextPocketId };
+    });
+    if (result.status) return res.status(result.status).json({ message: result.message });
+    emitFamily(req.space.id, 'transactions:changed', { action: 'fund-contribution-updated', id: req.params.id });
+    res.json({ message: 'Đã cập nhật khoản nạp quỹ.' });
+  },
+);
+
+router.delete(
+  '/contributions/:id',
+  [param('id').isUUID().withMessage('Khoản nạp quỹ không hợp lệ.')],
+  validate,
+  async (req, res) => {
+    const db = getDb();
+    const result = await db.transaction(async (transaction) => {
+      await lockFund(transaction, req.space.id);
+      const deleted = await transaction.prepare(`
+        DELETE FROM fund_contributions
+        WHERE id = ? AND family_id = ?
+      `).run(req.params.id, req.space.id);
+      if (!deleted.changes) return { status: 404, message: 'Không tìm thấy khoản nạp quỹ.' };
+      await bumpFamilyRevision(transaction, req.space.id, { transactions: true });
+      return null;
+    });
+    if (result) return res.status(result.status).json({ message: result.message });
+    emitFamily(req.space.id, 'transactions:changed', { action: 'fund-contribution-deleted', id: req.params.id });
+    res.status(204).end();
   },
 );
 
@@ -204,7 +370,7 @@ async function buildFundSummary(db, familyId, month) {
         GROUP BY fund_pocket_id
       ) ft ON ft.fund_pocket_id = fp.id
       LEFT JOIN categories c ON c.id = fp.category_id
-      WHERE fp.family_id = ?
+      WHERE fp.family_id = ? AND fp.is_archived = 0
       ORDER BY CASE WHEN fp.category_id IS NOT NULL THEN 0 ELSE 1 END,
         LOWER(COALESCE(c.name, fp.name)), fp.is_default DESC, fp.created_at
     `).all(familyId, familyId, familyId),
@@ -221,15 +387,17 @@ async function buildFundSummary(db, familyId, month) {
       GROUP BY fund_pocket_id, contributor_user_id
     `).all(familyId, range.start, range.end),
     db.prepare(`
-      SELECT fc.batch_id, fc.fund_pocket_id, fp.name AS pocket_name,
-        fc.contributor_user_id, fc.contributor_name, fc.amount,
+      SELECT fc.id AS contribution_id, fc.batch_id, fc.fund_pocket_id, fp.name AS pocket_name,
+        fp.color AS pocket_color, fc.contributor_user_id, fc.contributor_name,
+        u.avatar_url AS contributor_avatar, fc.amount,
         fc.contribution_date, fc.note, fc.created_at
       FROM fund_contributions fc
       JOIN fund_pockets fp ON fp.id = fc.fund_pocket_id
-      WHERE fc.family_id = ?
+      LEFT JOIN users u ON u.id = fc.contributor_user_id
+      WHERE fc.family_id = ? AND fc.contribution_date >= ? AND fc.contribution_date < ?
       ORDER BY fc.contribution_date DESC, fc.created_at DESC
       LIMIT 120
-    `).all(familyId),
+    `).all(familyId, range.start, range.end),
     db.prepare(`
       SELECT activity_date, SUM(contributed) AS contributed, SUM(spent) AS spent
       FROM (
@@ -285,7 +453,7 @@ async function buildFundSummary(db, familyId, month) {
         id: row.batch_id,
         contributionDate: row.contribution_date,
         note: row.note,
-        pocket: { id: row.fund_pocket_id, name: row.pocket_name },
+        pocket: { id: row.fund_pocket_id, name: row.pocket_name, color: row.pocket_color },
         total: 0,
         contributors: [],
       };
@@ -294,9 +462,13 @@ async function buildFundSummary(db, familyId, month) {
     }
     batch.total += Number(row.amount);
     batch.contributors.push({
+      id: row.contribution_id,
       userId: row.contributor_user_id,
       displayName: row.contributor_name,
+      avatarUrl: row.contributor_avatar,
       amount: Number(row.amount),
+      note: row.note,
+      createdAt: row.created_at,
     });
   }
 

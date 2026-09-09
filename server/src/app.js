@@ -12,10 +12,13 @@ import pushRoutes from './routes/push.js';
 import transactionRoutes from './routes/transactions.js';
 import userRoutes from './routes/users.js';
 import spaceRoutes from './routes/spaces.js';
+import shoppingRoutes from './routes/shopping.js';
 
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
+  // Vercel terminates the proxy before Express; trust its client IP for rate limits.
+  app.set('trust proxy', 1);
   app.use(cors({ origin: config.clientUrl, credentials: true }));
   app.use(express.json({ limit: '1mb' }));
   app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 120, standardHeaders: 'draft-8' }));
@@ -29,6 +32,7 @@ export function createApp() {
   app.use('/api/reports', reportRoutes);
   app.use('/api/push', pushRoutes);
   app.use('/api/spaces', spaceRoutes);
+  app.use('/api/shopping', shoppingRoutes);
   app.use('/api/transactions', transactionRoutes);
   app.use('/api/users', userRoutes);
 

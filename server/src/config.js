@@ -23,6 +23,11 @@ export const config = {
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY || '',
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || '',
   vapidSubject: process.env.VAPID_SUBJECT || 'mailto:admin@moneymate.vn',
+  geminiModel: ['gemini-2.5-flash', 'gemini-3.6-flash'].includes(process.env.GEMINI_MODEL)
+    ? 'gemini-3.5-flash'
+    : (process.env.GEMINI_MODEL || 'gemini-3.5-flash'),
+  geminiTimeoutMs: Number(process.env.GEMINI_TIMEOUT_MS || 30000),
+  geminiEncryptionKey: process.env.GEMINI_ENCRYPTION_KEY || process.env.JWT_ACCESS_SECRET || '',
   isProduction: process.env.NODE_ENV === 'production',
   previewAuthLinks: process.env.NODE_ENV !== 'production' || process.env.AUTH_LINK_MODE === 'preview',
 };

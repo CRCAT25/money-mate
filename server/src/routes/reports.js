@@ -31,11 +31,13 @@ router.get(
     `).get(...params);
 
     const categories = await db.prepare(`
-      SELECT c.id, c.name, c.icon, c.color, t.type, SUM(t.amount) AS amount, COUNT(*) AS count
+      SELECT COALESCE(t.category_id, 'deleted:' || t.category_name || ':' || t.type) AS id,
+        COALESCE(c.name, t.category_name) AS name,
+        c.icon, c.color, t.type, SUM(t.amount) AS amount, COUNT(*) AS count
       FROM transactions t
-      JOIN categories c ON c.id = t.category_id
+      LEFT JOIN categories c ON c.id = t.category_id
       WHERE t.family_id = ? AND t.transaction_date >= ? AND t.transaction_date < ?${memberFilter}
-      GROUP BY c.id, t.type
+      GROUP BY t.category_id, t.category_name, c.name, c.icon, c.color, t.type
       ORDER BY amount DESC
     `).all(...params);
 
@@ -48,6 +50,7 @@ router.get(
       transactionCount: Number(totals.transaction_count),
       categories: categories.map((category) => ({
         ...category,
+        color: category.color || '#8E938B',
         amount: Number(category.amount),
         count: Number(category.count),
       })),
@@ -92,10 +95,10 @@ router.get(
 router.get('/export', [query('month').matches(/^\d{4}-\d{2}$/)], validate, async (req, res) => {
   const range = monthRange(req.query.month);
   const rows = await getDb().prepare(`
-    SELECT t.transaction_date, t.type, t.amount, c.name AS category,
+    SELECT t.transaction_date, t.type, t.amount, COALESCE(c.name, t.category_name) AS category,
       u.display_name AS member, COALESCE(t.note, '') AS note
     FROM transactions t
-    JOIN categories c ON c.id = t.category_id
+    LEFT JOIN categories c ON c.id = t.category_id
     JOIN users u ON u.id = t.assigned_to
     WHERE t.family_id = ? AND t.transaction_date >= ? AND t.transaction_date < ?
     ORDER BY t.transaction_date DESC

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { BellRing, Copy, Grid2X2, ImagePlus, KeyRound, LoaderCircle, LogOut, RefreshCw, Save, Shield, Trash2, UserMinus, UserPlus, Users, X } from 'lucide-react';
+import { BellRing, Copy, ExternalLink, Grid2X2, ImagePlus, KeyRound, LayoutDashboard, LoaderCircle, LogOut, RefreshCw, Save, Shield, Trash2, UserMinus, UserPlus, Users, X } from 'lucide-react';
 import Avatar from '../components/ui/Avatar.jsx';
 import ConfirmModal from '../components/ui/ConfirmModal.jsx';
 import Modal from '../components/ui/Modal.jsx';
@@ -26,11 +26,25 @@ export default function Settings() {
   const [confirmation, setConfirmation] = useState(null);
   const [familySetupOpen, setFamilySetupOpen] = useState(false);
   const [pushState, setPushState] = useState({ loading: true, supported: false, configured: false, permission: 'default', subscribed: false });
+  const [homePreferences, setHomePreferences] = useState({ showRecentTransactions: true, showSpendingPlan: true, showIncomePlan: true, showFundPlan: true, showShoppingPlan: true });
+  const [geminiStatus, setGeminiStatus] = useState({ loading: true, configured: false, maskedKey: '', model: 'gemini-3.5-flash' });
+  const [geminiKey, setGeminiKey] = useState('');
   const avatarInput = useRef(null);
   const familySpace = spaces.find((space) => space.type === 'family');
+  const canManageGemini = isPersonal || familyDetails?.role === 'owner';
+  const canManageHomePreferences = familyDetails?.role === 'owner';
 
   useEffect(() => {
-    if (familyDetails) setSpaceForm({ name: familyDetails.name, currency: familyDetails.currency, language: familyDetails.language });
+    if (familyDetails) {
+      setSpaceForm({ name: familyDetails.name, currency: familyDetails.currency, language: familyDetails.language });
+      setHomePreferences({
+        showRecentTransactions: familyDetails.showRecentTransactions !== false,
+        showSpendingPlan: familyDetails.showSpendingPlan !== false,
+        showIncomePlan: familyDetails.showIncomePlan !== false,
+        showFundPlan: familyDetails.showFundPlan !== false,
+        showShoppingPlan: familyDetails.showShoppingPlan !== false,
+      });
+    }
   }, [familyDetails]);
 
   useEffect(() => {
@@ -40,6 +54,15 @@ export default function Settings() {
       .catch(() => current && setPushState((state) => ({ ...state, loading: false })));
     return () => { current = false; };
   }, [user.id]);
+
+  useEffect(() => {
+    let current = true;
+    setGeminiStatus((status) => ({ ...status, loading: true }));
+    api.get(`/spaces/${activeSpace.id}/gemini`)
+      .then(({ data }) => current && setGeminiStatus({ ...data, loading: false }))
+      .catch(() => current && setGeminiStatus((status) => ({ ...status, loading: false })));
+    return () => { current = false; };
+  }, [activeSpace.id]);
 
   if (loading) return <SettingsPageSkeleton />;
 
@@ -60,8 +83,42 @@ export default function Settings() {
   };
   const saveSpace = async (event) => {
     event.preventDefault(); setSaving('space');
-    try { const { data } = await api.patch(`/spaces/${activeSpace.id}`, spaceForm); notify(data.message); await Promise.all([refreshProfile(), reloadBaseData()]); }
+    try { const { data } = await api.patch(`/spaces/${activeSpace.id}`, { ...spaceForm, ...homePreferences }); notify(data.message); await Promise.all([refreshProfile(), reloadBaseData()]); }
     catch (error) { notify(errorMessage(error), 'error'); }
+    finally { setSaving(''); }
+  };
+  const saveHomePreferences = async (event) => {
+    event.preventDefault(); setSaving('home-preferences');
+    try {
+      await api.patch(`/spaces/${activeSpace.id}`, { ...spaceForm, ...homePreferences });
+      await reloadBaseData();
+      notify('Đã cập nhật giao diện trang chủ gia đình.');
+    } catch (error) { notify(errorMessage(error), 'error'); }
+    finally { setSaving(''); }
+  };
+  const saveGemini = async (event) => {
+    event.preventDefault();
+    if (!geminiKey.trim()) return notify('Hãy dán Gemini API key trước khi lưu.', 'error');
+    setSaving('gemini');
+    try {
+      await api.patch(`/spaces/${activeSpace.id}/gemini`, { apiKey: geminiKey.trim(), model: geminiStatus.model });
+      const { data } = await api.get(`/spaces/${activeSpace.id}/gemini`);
+      setGeminiStatus({ ...data, loading: false });
+      setGeminiKey('');
+      await reloadBaseData();
+      notify('Đã kết nối Gemini riêng cho không gian này.');
+    } catch (error) { notify(errorMessage(error), 'error'); }
+    finally { setSaving(''); }
+  };
+  const removeGemini = async () => {
+    setSaving('gemini-remove');
+    try {
+      await api.delete(`/spaces/${activeSpace.id}/gemini`);
+      setGeminiStatus({ loading: false, configured: false, maskedKey: '', model: geminiStatus.model });
+      setConfirmation(null);
+      await reloadBaseData();
+      notify('Đã xóa Gemini API key của không gian.');
+    } catch (error) { notify(errorMessage(error), 'error'); }
     finally { setSaving(''); }
   };
   const changePassword = async (event) => {
@@ -140,7 +197,7 @@ export default function Settings() {
     <div className="space-y-5 sm:space-y-6">
       <div className="flex flex-col gap-3 pr-28 sm:flex-row sm:items-end sm:justify-between sm:pr-0"><div><p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-coral">{isPersonal ? 'Không gian riêng của bạn' : 'Không gian của nhà mình'}</p><h1 className="font-editorial text-[28px] font-semibold tracking-[-0.03em] text-ink sm:text-4xl">Cài đặt</h1></div><Link to="/categories" className="secondary-button"><Grid2X2 className="size-4" /> Quản lý danh mục</Link></div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <SettingsCard eyebrow="Cá nhân" title="Hồ sơ của bạn" icon={Shield}>
           <form onSubmit={saveProfile} className="space-y-5">
             <div className="flex items-center gap-3 rounded-[16px] bg-mint/45 p-3"><Avatar user={{ ...user, ...profile }} size="lg" /><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium text-ink">{profile.displayName || user.displayName}</div><div className="mt-0.5 truncate text-xs text-ink/55">{profile.email}</div><div className="mt-2 flex flex-wrap gap-2"><button type="button" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-white px-3 text-xs font-medium text-forest shadow-sm" onClick={() => avatarInput.current?.click()}><ImagePlus className="size-4" /> Chọn ảnh</button>{profile.avatarUrl && <button type="button" className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-medium text-coral" onClick={() => setProfile({ ...profile, avatarUrl: '' })}><X className="size-4" /> Gỡ ảnh</button>}</div><input ref={avatarInput} className="hidden" type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseAvatar} /></div></div>
@@ -157,6 +214,58 @@ export default function Settings() {
             <div className="grid gap-4 sm:grid-cols-2"><label className="block"><span className="label">Loại tiền</span><select className="field" value={spaceForm.currency} onChange={(e) => setSpaceForm({ ...spaceForm, currency: e.target.value })}><option>VND</option><option>USD</option><option>EUR</option></select></label><label className="block"><span className="label">Ngôn ngữ</span><select className="field" value={spaceForm.language} onChange={(e) => setSpaceForm({ ...spaceForm, language: e.target.value })}><option value="vi">Tiếng Việt</option><option value="en">English</option></select></label></div>
             <button className="primary-button" disabled={saving === 'space'}>{saving === 'space' ? <LoaderCircle className="size-5 animate-spin" /> : <Save className="size-4" />} Lưu thay đổi</button>
           </form>
+        </SettingsCard>
+
+        {!isPersonal && <SettingsCard eyebrow="Giao diện" title="Trang chủ gia đình" icon={LayoutDashboard}>
+          <p className="text-sm leading-6 text-ink/52">Ẩn bớt nội dung không dùng để trang Home và Kế hoạch gọn hơn cho tất cả thành viên.</p>
+          {!canManageHomePreferences && <p className="mt-2 text-[11px] leading-5 text-ink/45">Chỉ chủ gia đình có thể thay đổi thiết lập này.</p>}
+          <form onSubmit={saveHomePreferences} className="mt-4 space-y-2.5">
+            <PreferenceToggle
+              label="Tất cả giao dịch gần đây"
+              description="Cho phép xem tab giao dịch ngoài lịch quỹ chung."
+              checked={homePreferences.showRecentTransactions}
+              disabled={!canManageHomePreferences}
+              onChange={(value) => setHomePreferences((current) => ({ ...current, showRecentTransactions: value }))}
+            />
+            <PreferenceToggle
+              label="Chi tiêu"
+              description="Hiển thị kế hoạch chi tiêu trong mục Kế hoạch."
+              checked={homePreferences.showSpendingPlan}
+              disabled={!canManageHomePreferences}
+              onChange={(value) => setHomePreferences((current) => ({ ...current, showSpendingPlan: value }))}
+            />
+            <PreferenceToggle
+              label="Thu nhập"
+              description="Hiển thị kế hoạch thu nhập trong mục Kế hoạch."
+              checked={homePreferences.showIncomePlan}
+              disabled={!canManageHomePreferences}
+              onChange={(value) => setHomePreferences((current) => ({ ...current, showIncomePlan: value }))}
+            />
+            <PreferenceToggle
+              label="Nạp quỹ"
+              description="Hiển thị kế hoạch nạp quỹ trong mục Kế hoạch."
+              checked={homePreferences.showFundPlan}
+              disabled={!canManageHomePreferences}
+              onChange={(value) => setHomePreferences((current) => ({ ...current, showFundPlan: value }))}
+            />
+            <PreferenceToggle
+              label="Mua sắm"
+              description="Hiển thị danh sách mua sắm trong mục Kế hoạch."
+              checked={homePreferences.showShoppingPlan}
+              disabled={!canManageHomePreferences}
+              onChange={(value) => setHomePreferences((current) => ({ ...current, showShoppingPlan: value }))}
+            />
+            <button className="primary-button mt-2" disabled={!canManageHomePreferences || saving === 'home-preferences'}>{saving === 'home-preferences' ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />} Lưu giao diện</button>
+          </form>
+        </SettingsCard>}
+
+        <SettingsCard eyebrow="AI mua sắm" title="Gemini theo không gian" icon={KeyRound}>
+          <p className="text-sm leading-6 text-ink/52">Mỗi không gian dùng một API key riêng. Key chỉ được lưu mã hóa ở backend và không hiển thị lại đầy đủ.</p>
+          <a className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-forest underline-offset-2 hover:underline" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer"><ExternalLink className="size-3.5" /> Mở Google AI Studio để tạo API key</a>
+          {geminiStatus.loading ? <Skeleton className="mt-4 h-20 rounded-[14px]" /> : <div className="mt-4 rounded-[15px] border border-ink/[0.06] bg-white/55 p-3.5">
+            <div className="flex items-center gap-2 text-xs font-medium text-ink"><span className={`size-2 rounded-full ${geminiStatus.configured ? 'bg-forest' : 'bg-ink/20'}`} />{geminiStatus.configured ? `Đã kết nối · ${geminiStatus.maskedKey}` : 'Chưa cấu hình API key'}</div>
+            {canManageGemini ? <form onSubmit={saveGemini} className="mt-3 space-y-2.5"><input className="field" type="password" autoComplete="off" value={geminiKey} onChange={(event) => setGeminiKey(event.target.value)} placeholder={geminiStatus.configured ? 'Dán key mới để thay thế' : 'Dán Gemini API key tại đây'} /><div className="flex flex-wrap gap-2"><button className="primary-button" disabled={saving === 'gemini'}>{saving === 'gemini' ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />} {geminiStatus.configured ? 'Thay key' : 'Lưu API key'}</button>{geminiStatus.configured && <button type="button" className="secondary-button text-coral" onClick={() => setConfirmation({ type: 'gemini' })} disabled={saving === 'gemini-remove'}>{saving === 'gemini-remove' ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />} Xóa key</button>}</div></form> : <p className="mt-2 text-[11px] leading-5 text-ink/45">Chỉ chủ gia đình có thể thay đổi key. Các thành viên vẫn dùng key chung của không gian này.</p>}
+          </div>}
         </SettingsCard>
 
         <SettingsCard eyebrow="Thiết bị" title="Thông báo gia đình" icon={BellRing}>
@@ -191,16 +300,17 @@ export default function Settings() {
 
       <Modal open={familySetupOpen} title="Kết nối gia đình" onClose={() => setFamilySetupOpen(false)} compact><form onSubmit={setupFamily} className="space-y-4"><div className="grid grid-cols-2 rounded-xl bg-ink/[0.05] p-1"><button type="button" className={`min-h-10 rounded-lg text-xs font-medium ${familySetup.mode === 'create' ? 'bg-white text-ink shadow-sm' : 'text-ink/45'}`} onClick={() => setFamilySetup({ ...familySetup, mode: 'create' })}>Tạo gia đình</button><button type="button" className={`min-h-10 rounded-lg text-xs font-medium ${familySetup.mode === 'join' ? 'bg-white text-ink shadow-sm' : 'text-ink/45'}`} onClick={() => setFamilySetup({ ...familySetup, mode: 'join' })}>Dùng mã mời</button></div>{familySetup.mode === 'create' ? <label className="block"><span className="label">Tên gia đình</span><input className="field" value={familySetup.name} onChange={(e) => setFamilySetup({ ...familySetup, name: e.target.value })} required /></label> : <label className="block"><span className="label">Mã mời</span><input className="field uppercase tracking-[0.16em]" value={familySetup.inviteCode} onChange={(e) => setFamilySetup({ ...familySetup, inviteCode: e.target.value })} required /></label>}<button className="primary-button w-full" disabled={saving === 'family-setup'}>{saving === 'family-setup' && <LoaderCircle className="size-4 animate-spin" />}{familySetup.mode === 'create' ? 'Tạo không gian' : 'Tham gia gia đình'}</button></form></Modal>
 
-      <ConfirmModal open={Boolean(confirmation)} title={confirmationTitle(confirmation)} description={confirmationDescription(confirmation, familyDetails)} confirmLabel={confirmationLabel(confirmation)} loading={saving === 'family-action' || saving === 'delete-account'} tone={confirmation?.type === 'transfer' ? 'warning' : 'danger'} onClose={() => setConfirmation(null)} onConfirm={() => { if (confirmation?.type === 'member') return removeMember(confirmation.member); if (confirmation?.type === 'transfer') return transferOwner(confirmation.member); if (confirmation?.type === 'leave') return leaveFamily(); if (confirmation?.type === 'dissolve') return dissolveFamily(); return deleteAccount(); }} />
+      <ConfirmModal open={Boolean(confirmation)} title={confirmationTitle(confirmation)} description={confirmationDescription(confirmation, familyDetails)} confirmLabel={confirmationLabel(confirmation)} loading={saving === 'family-action' || saving === 'delete-account' || saving === 'gemini-remove'} tone={confirmation?.type === 'transfer' ? 'warning' : 'danger'} onClose={() => setConfirmation(null)} onConfirm={() => { if (confirmation?.type === 'member') return removeMember(confirmation.member); if (confirmation?.type === 'transfer') return transferOwner(confirmation.member); if (confirmation?.type === 'leave') return leaveFamily(); if (confirmation?.type === 'dissolve') return dissolveFamily(); if (confirmation?.type === 'gemini') return removeGemini(); return deleteAccount(); }} />
     </div>
   );
 }
 
-function confirmationTitle(item) { if (item?.type === 'member') return 'Xóa thành viên?'; if (item?.type === 'transfer') return 'Chuyển quyền chủ?'; if (item?.type === 'leave') return 'Rời gia đình?'; if (item?.type === 'dissolve') return 'Giải tán gia đình?'; return 'Xóa tài khoản?'; }
-function confirmationLabel(item) { if (item?.type === 'member') return 'Xóa thành viên'; if (item?.type === 'transfer') return 'Chuyển quyền'; if (item?.type === 'leave') return 'Rời gia đình'; if (item?.type === 'dissolve') return 'Giải tán'; return 'Xóa tài khoản'; }
-function confirmationDescription(item, details) { if (item?.type === 'member') return `${item.member.displayName} sẽ bị xóa khỏi gia đình. Giao dịch cũ vẫn được giữ.`; if (item?.type === 'transfer') return `${item.member.displayName} sẽ trở thành chủ gia đình mới. Sau đó bạn có thể tự rời gia đình.`; if (item?.type === 'leave') return 'Bạn sẽ mất quyền truy cập dữ liệu gia đình nhưng sổ Cá nhân vẫn được giữ nguyên.'; if (item?.type === 'dissolve') return Number(details?.members?.length) > 1 ? 'Gia đình vẫn còn thành viên. Hãy chuyển quyền chủ thay vì giải tán.' : 'Toàn bộ dữ liệu gia đình sẽ bị xóa vĩnh viễn. Sổ Cá nhân của bạn không bị ảnh hưởng.'; return 'Tài khoản và toàn bộ dữ liệu Cá nhân của bạn sẽ bị xóa vĩnh viễn.'; }
+function confirmationTitle(item) { if (item?.type === 'member') return 'Xóa thành viên?'; if (item?.type === 'transfer') return 'Chuyển quyền chủ?'; if (item?.type === 'leave') return 'Rời gia đình?'; if (item?.type === 'dissolve') return 'Giải tán gia đình?'; if (item?.type === 'gemini') return 'Xóa Gemini API key?'; return 'Xóa tài khoản?'; }
+function confirmationLabel(item) { if (item?.type === 'member') return 'Xóa thành viên'; if (item?.type === 'transfer') return 'Chuyển quyền'; if (item?.type === 'leave') return 'Rời gia đình'; if (item?.type === 'dissolve') return 'Giải tán'; if (item?.type === 'gemini') return 'Xóa API key'; return 'Xóa tài khoản'; }
+function confirmationDescription(item, details) { if (item?.type === 'member') return `${item.member.displayName} sẽ bị xóa khỏi gia đình. Giao dịch cũ vẫn được giữ.`; if (item?.type === 'transfer') return `${item.member.displayName} sẽ trở thành chủ gia đình mới. Sau đó bạn có thể tự rời gia đình.`; if (item?.type === 'leave') return 'Bạn sẽ mất quyền truy cập dữ liệu gia đình nhưng sổ Cá nhân vẫn được giữ nguyên.'; if (item?.type === 'dissolve') return Number(details?.members?.length) > 1 ? 'Gia đình vẫn còn thành viên. Hãy chuyển quyền chủ thay vì giải tán.' : 'Toàn bộ dữ liệu gia đình sẽ bị xóa vĩnh viễn. Sổ Cá nhân của bạn không bị ảnh hưởng.'; if (item?.type === 'gemini') return 'Không gian sẽ không thể dùng AI ước lượng giá cho đến khi nhập key mới.'; return 'Tài khoản và toàn bộ dữ liệu Cá nhân của bạn sẽ bị xóa vĩnh viễn.'; }
 
 function SettingsPageSkeleton() { return <div aria-label="Đang tải cài đặt" className="space-y-5" role="status"><Skeleton className="h-10 w-52 rounded-xl" /><div className="grid gap-4 xl:grid-cols-2">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-72 rounded-[18px]" />)}</div></div>; }
-function SettingsCard({ eyebrow, title, icon: Icon, children }) { return <section className="rounded-[18px] border border-ink/[0.06] bg-paper/85 p-4 shadow-card sm:p-5"><div className="mb-5 flex items-start justify-between"><div><p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.13em] text-ink/48">{eyebrow}</p><h2 className="font-editorial text-[21px] font-semibold text-ink">{title}</h2></div><span className="grid size-10 place-items-center rounded-xl bg-mint text-forest"><Icon className="size-[18px]" /></span></div>{children}</section>; }
+function SettingsCard({ eyebrow, title, icon: Icon, children }) { return <section className="min-w-0 rounded-[18px] border border-ink/[0.06] bg-paper/85 p-4 shadow-card sm:p-5"><div className="mb-5 flex min-w-0 items-start justify-between"><div className="min-w-0"><p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.13em] text-ink/48">{eyebrow}</p><h2 className="font-editorial text-[21px] font-semibold text-ink">{title}</h2></div><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-mint text-forest"><Icon className="size-[18px]" /></span></div>{children}</section>; }
+function PreferenceToggle({ label, description, checked, disabled = false, onChange }) { return <div className={`flex items-center gap-3 rounded-[14px] border border-ink/[0.06] bg-white/55 p-3 ${disabled ? 'opacity-60' : ''}`}><span className="min-w-0 flex-1"><strong className="block text-sm font-medium text-ink">{label}</strong><span className="mt-0.5 block text-[11px] leading-5 text-ink/45">{description}</span></span><button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} onClick={() => onChange(!checked)} className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed ${checked ? 'bg-forest' : 'bg-ink/15'}`}><span className={`absolute top-1 grid size-5 place-items-center rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} /></button></div>; }
 function pushDescription(state) { if (state.loading) return 'Đang kiểm tra trạng thái thông báo…'; if (!state.supported) return 'Hãy cài MoneyMate vào màn hình chính để nhận thông báo trên thiết bị này.'; if (!state.configured) return 'Máy chủ chưa được cấu hình để gửi thông báo.'; if (state.permission === 'denied') return 'Thông báo đang bị chặn trong cài đặt của thiết bị.'; if (state.subscribed) return 'Bạn sẽ biết ngay khi thành viên khác thêm một khoản chi.'; return 'Bật để nhận thông báo kể cả khi MoneyMate đang đóng.'; }
 function resizeAvatar(file) { return new Promise((resolve, reject) => { const image = new Image(); const objectUrl = URL.createObjectURL(file); image.onload = () => { const canvas = document.createElement('canvas'); const size = 256; canvas.width = size; canvas.height = size; const context = canvas.getContext('2d'); const sourceSize = Math.min(image.naturalWidth, image.naturalHeight); context.drawImage(image, (image.naturalWidth - sourceSize) / 2, (image.naturalHeight - sourceSize) / 2, sourceSize, sourceSize, 0, 0, size, size); URL.revokeObjectURL(objectUrl); resolve(canvas.toDataURL('image/webp', 0.82)); }; image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Invalid image')); }; image.src = objectUrl; }); }

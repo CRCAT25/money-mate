@@ -10,7 +10,12 @@ export async function seedDemoData(db) {
 
   await db.transaction(async (transaction) => {
     await transaction.prepare('DELETE FROM families WHERE id = ?').run(familyId);
-    await transaction.prepare(`INSERT INTO families (id, name, invite_code, currency, language) VALUES (?, ?, ?, 'VND', 'vi')`)
+    await transaction.prepare(`
+      INSERT INTO families (
+        id, name, invite_code, currency, language,
+        show_recent_transactions, show_spending_plan, show_fund_plan, show_shopping_plan
+      ) VALUES (?, ?, ?, 'VND', 'vi', 0, 0, 1, 1)
+    `)
       .run(familyId, 'Nhà Mình', 'MATE2026');
     await transaction.prepare(`
       INSERT INTO users (id, email, password_hash, display_name, email_verified)
@@ -32,8 +37,8 @@ export async function seedDemoData(db) {
     const findCategory = (name, type) => categories.find((item) => item.name === name && item.type === type).id;
     const insertTransaction = transaction.prepare(`
       INSERT INTO transactions
-        (id, family_id, category_id, created_by, assigned_to, type, amount, transaction_date, note)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, family_id, category_id, category_name, created_by, assigned_to, type, amount, transaction_date, note)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const today = new Date();
@@ -60,8 +65,7 @@ export async function seedDemoData(db) {
       ['Sức khỏe', 'expense', 2200000, date(-3, 19), 'Khám sức khỏe', memberId],
     ];
     for (const [name, type, amount, transactionDate, note, assignedTo] of items) {
-      await insertTransaction.run(id(), familyId, findCategory(name, type), ownerId, assignedTo, type, amount, transactionDate, note);
+      await insertTransaction.run(id(), familyId, findCategory(name, type), name, ownerId, assignedTo, type, amount, transactionDate, note);
     }
   });
 }
-

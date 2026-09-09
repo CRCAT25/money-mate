@@ -8,7 +8,8 @@ export function setApiSpace(spaceId) {
 }
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : '/api'),
+  // Production serves the API through the same Vercel domain; never ship a local API URL.
+  baseURL: import.meta.env.PROD ? '/api' : (import.meta.env.VITE_API_URL || 'http://localhost:4000/api'),
   timeout: 12000,
 });
 

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useAuth } from './context/AuthContext.jsx';
-import { FamilyProvider } from './context/FamilyContext.jsx';
+import { FamilyProvider, useFamilyData } from './context/FamilyContext.jsx';
 import AppShell from './components/layout/AppShell.jsx';
 import Skeleton from './components/ui/Skeleton.jsx';
 
@@ -12,7 +12,9 @@ const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword.jsx'));
 const ResetPassword = lazy(() => import('./pages/auth/ResetPassword.jsx'));
 const Home = lazy(() => import('./pages/Home.jsx'));
 const Plans = lazy(() => import('./pages/Plans.jsx'));
+const IncomePlans = lazy(() => import('./pages/IncomePlans.jsx'));
 const FundPlans = lazy(() => import('./pages/FundPlans.jsx'));
+const Shopping = lazy(() => import('./pages/Shopping.jsx'));
 const TransactionForm = lazy(() => import('./pages/TransactionForm.jsx'));
 const Categories = lazy(() => import('./pages/Categories.jsx'));
 const Reports = lazy(() => import('./pages/Reports.jsx'));
@@ -25,7 +27,9 @@ function ProtectedRoute() {
     const preload = () => {
       void Promise.allSettled([
         import('./pages/Plans.jsx'),
+        import('./pages/IncomePlans.jsx'),
         import('./pages/FundPlans.jsx'),
+        import('./pages/Shopping.jsx'),
         import('./pages/TransactionForm.jsx'),
         import('./pages/Categories.jsx'),
         import('./pages/Reports.jsx'),
@@ -57,6 +61,20 @@ function GuestRoute({ children }) {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
   return user ? <Navigate to="/" replace /> : children;
+}
+
+function PlanVisibilityRoute({ setting, children }) {
+  const { familyDetails, isPersonal, loading } = useFamilyData();
+  if (isPersonal || loading || !familyDetails || familyDetails[setting] !== false) return children;
+
+  const options = [
+    ['showSpendingPlan', '/plans'],
+    ['showIncomePlan', '/income-plans'],
+    ['showFundPlan', '/fund-plans'],
+    ['showShoppingPlan', '/shopping'],
+  ];
+  const fallback = options.find(([key]) => familyDetails[key] !== false)?.[1] || '/';
+  return <Navigate to={fallback} replace />;
 }
 
 function LoadingScreen() {
@@ -172,10 +190,13 @@ export default function App() {
             <Route path="/reset-password" element={<GuestRoute><ResetPassword /></GuestRoute>} />
             <Route element={<ProtectedRoute />}>
               <Route index element={<Home />} />
-              <Route path="plans" element={<Plans />} />
-              <Route path="fund-plans" element={<FundPlans />} />
+              <Route path="plans" element={<PlanVisibilityRoute setting="showSpendingPlan"><Plans /></PlanVisibilityRoute>} />
+              <Route path="income-plans" element={<PlanVisibilityRoute setting="showIncomePlan"><IncomePlans /></PlanVisibilityRoute>} />
+              <Route path="fund-plans" element={<PlanVisibilityRoute setting="showFundPlan"><FundPlans /></PlanVisibilityRoute>} />
+              <Route path="shopping" element={<PlanVisibilityRoute setting="showShoppingPlan"><Shopping /></PlanVisibilityRoute>} />
               <Route path="add" element={<TransactionForm />} />
               <Route path="transactions/:id/edit" element={<TransactionForm />} />
+              <Route path="fund/contributions/:contributionId/edit" element={<TransactionForm />} />
               <Route path="categories" element={<Categories />} />
               <Route path="reports" element={<Reports />} />
               <Route path="settings" element={<Settings />} />

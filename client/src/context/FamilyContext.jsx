@@ -132,8 +132,10 @@ export function FamilyProvider({ children }) {
 
   useEffect(() => {
     if (!user) return undefined;
-    const socketUrl = import.meta.env.VITE_SOCKET_URL
-      || (window.location.hostname === 'localhost' ? 'http://localhost:4000' : null);
+    const configuredSocketUrl = import.meta.env.VITE_SOCKET_URL;
+    const socketUrl = configuredSocketUrl && !/localhost|127\.0\.0\.1/.test(configuredSocketUrl)
+      ? configuredSocketUrl
+      : (import.meta.env.DEV && window.location.hostname === 'localhost' ? 'http://localhost:4000' : null);
     const syncChanged = (payload) => {
       if (!payload?.spaceId || payload.spaceId === activeSpaceId) checkForChanges().catch(() => {});
     };
@@ -142,6 +144,7 @@ export function FamilyProvider({ children }) {
       socket.on('transactions:changed', syncChanged);
       socket.on('categories:changed', syncChanged);
       socket.on('budgets:changed', syncChanged);
+      socket.on('shopping:changed', syncChanged);
       socket.on('family:changed', syncChanged);
       socket.on('space:changed', syncChanged);
       return () => socket.disconnect();
@@ -205,35 +208,51 @@ export function FamilyProvider({ children }) {
 
   const prefetchPages = useCallback((months) => {
     const requestedMonths = [...new Set((Array.isArray(months) ? months : [months]).filter((month) => /^\d{4}-\d{2}$/.test(month)))];
-    const requests = requestedMonths.flatMap((month) => {
-      const homeRequest = loadCache(`home:${month}`, async () => {
-        const [summaryResponse, transactionResponse, fundEntry] = await Promise.all([
-          api.get('/reports/summary', { params: { month } }),
-          api.get('/transactions', { params: { month, limit: 200 } }),
-          loadFund(month),
-        ]);
-        return { summary: summaryResponse.data, transactions: transactionResponse.data, fund: fundEntry?.data || null };
-      });
-      const plansRequest = loadCache(`plans:${month}`, async () => {
-        const { data } = await api.get('/budgets', { params: { month } });
-        return { data };
-      });
-      const reportsRequest = loadCache(`reports:${month}::`, async () => {
-        const [homeData, trendResponse] = await Promise.all([
-          homeRequest,
-          api.get('/reports/trend', { params: { endMonth: month, months: 6 } }),
-        ]);
-        return {
-          data: {
-            summary: homeData.summary,
-            trend: trendResponse.data,
-            transactions: homeData.transactions,
-          },
-        };
-      });
-      return [homeRequest, plansRequest, reportsRequest];
+    return new Promise((resolve) => {
+      const run = () => {
+        const requests = requestedMonths.flatMap((month) => {
+          const homeRequest = loadCache(`home:${month}`, async () => {
+            const [summaryResponse, transactionResponse, fundEntry] = await Promise.all([
+              api.get('/reports/summary', { params: { month } }),
+              api.get('/transactions', { params: { month, limit: 200 } }),
+              loadFund(month),
+            ]);
+            return { summary: summaryResponse.data, transactions: transactionResponse.data, fund: fundEntry?.data || null };
+          });
+          const plansRequest = loadCache(`plans:${month}`, async () => {
+            const { data } = await api.get('/budgets', { params: { month } });
+            return { data };
+          });
+          const incomePlansRequest = loadCache(`plans:income:${month}`, async () => {
+            const { data } = await api.get('/budgets', { params: { month, type: 'income' } });
+            return { data };
+          });
+          const shoppingRequest = loadCache(`shopping:${month}`, async () => {
+            const { data } = await api.get('/shopping', { params: { month } });
+            return { data };
+          });
+          const reportsRequest = loadCache(`reports:${month}::`, async () => {
+            const [homeData, trendResponse] = await Promise.all([
+              homeRequest,
+              api.get('/reports/trend', { params: { endMonth: month, months: 6 } }),
+            ]);
+            return {
+              data: {
+                summary: homeData.summary,
+                trend: trendResponse.data,
+                transactions: homeData.transactions,
+              },
+            };
+          });
+          return [homeRequest, plansRequest, incomePlansRequest, shoppingRequest, reportsRequest];
+        });
+        Promise.allSettled(requests).then(resolve);
+      };
+
+      // Keep background warming from competing with the page the user just opened.
+      if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 900 });
+      else window.setTimeout(run, 350);
     });
-    return Promise.allSettled(requests);
   }, [loadCache, loadFund]);
 
   const touch = useCallback((kind = 'transactions') => {

@@ -20,7 +20,7 @@ export default function SpaceSwitcher({ compact = false }) {
         <span className={`grid place-items-center rounded-lg ${activeSpace.type === 'personal' ? 'bg-sun/25 text-[#9A752E]' : 'bg-mint text-forest'} ${compact ? 'size-6' : 'size-7'}`}>
           <Icon className="size-3.5" />
         </span>
-        <span className="max-w-28 truncate font-medium">{activeSpace.type === 'personal' ? 'Cá nhân' : activeSpace.name}</span>
+        <span className="max-w-28 truncate font-medium">{activeSpace.type === 'personal' ? 'Cá nhân' : compact ? 'Gia đình' : activeSpace.name}</span>
         <ChevronDown className="size-3.5 text-ink/38" />
       </button>
 

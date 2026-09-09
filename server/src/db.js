@@ -144,6 +144,13 @@ async function migrate(db) {
       language TEXT NOT NULL DEFAULT 'vi',
       base_revision INTEGER NOT NULL DEFAULT 0,
       transactions_revision INTEGER NOT NULL DEFAULT 0,
+      gemini_api_key_encrypted TEXT,
+      gemini_model TEXT NOT NULL DEFAULT 'gemini-3.5-flash',
+      show_recent_transactions INTEGER NOT NULL DEFAULT 1,
+      show_spending_plan INTEGER NOT NULL DEFAULT 1,
+      show_income_plan INTEGER NOT NULL DEFAULT 1,
+      show_fund_plan INTEGER NOT NULL DEFAULT 1,
+      show_shopping_plan INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -186,6 +193,7 @@ async function migrate(db) {
       name TEXT NOT NULL,
       color TEXT NOT NULL DEFAULT '#3D7060',
       is_default INTEGER NOT NULL DEFAULT 0,
+      is_archived INTEGER NOT NULL DEFAULT 0,
       monthly_target ${amountType} NOT NULL DEFAULT 0 CHECK(monthly_target >= 0),
       category_id TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -207,7 +215,8 @@ async function migrate(db) {
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
       family_id TEXT NOT NULL,
-      category_id TEXT NOT NULL,
+      category_id TEXT,
+      category_name TEXT NOT NULL,
       created_by TEXT NOT NULL,
       assigned_to TEXT NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('expense', 'income')),
@@ -219,7 +228,6 @@ async function migrate(db) {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
-      FOREIGN KEY (category_id) REFERENCES categories(id),
       FOREIGN KEY (created_by) REFERENCES users(id),
       FOREIGN KEY (assigned_to) REFERENCES users(id),
       FOREIGN KEY (fund_pocket_id) REFERENCES fund_pockets(id)
@@ -255,6 +263,33 @@ async function migrate(db) {
       UNIQUE(family_id, category_id, month),
       FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
       FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS shopping_items (
+      id TEXT PRIMARY KEY,
+      family_id TEXT NOT NULL,
+      month TEXT NOT NULL,
+      name TEXT NOT NULL,
+      quantity ${amountType} NOT NULL CHECK(quantity > 0),
+      unit TEXT,
+      category_id TEXT,
+      category_name TEXT,
+      planned_unit_price ${amountType} NOT NULL CHECK(planned_unit_price >= 0),
+      planned_total ${amountType} NOT NULL CHECK(planned_total >= 0),
+      ai_price_low ${amountType},
+      ai_price_high ${amountType},
+      ai_recommended_price ${amountType},
+      sources_json TEXT,
+      researched_at TEXT,
+      confidence TEXT,
+      notes TEXT,
+      budget_applied_amount ${amountType} NOT NULL DEFAULT 0 CHECK(budget_applied_amount >= 0),
+      budget_applied_category_id TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
       FOREIGN KEY (created_by) REFERENCES users(id)
     );
 
@@ -322,8 +357,18 @@ async function migrate(db) {
 
     CREATE INDEX IF NOT EXISTS idx_transactions_family_date
       ON transactions(family_id, transaction_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_transactions_family_category_date
+      ON transactions(family_id, category_id, transaction_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_transactions_family_member_date
+      ON transactions(family_id, assigned_to, transaction_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_transactions_family_fund_pocket
+      ON transactions(family_id, fund_pocket_id, type, paid_from_fund);
     CREATE INDEX IF NOT EXISTS idx_fund_contributions_family_date
       ON fund_contributions(family_id, contribution_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_fund_contributions_family_pocket_date
+      ON fund_contributions(family_id, fund_pocket_id, contribution_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_fund_contributions_family_member_date
+      ON fund_contributions(family_id, contributor_user_id, contribution_date DESC);
     CREATE INDEX IF NOT EXISTS idx_fund_contributions_batch
       ON fund_contributions(batch_id);
     CREATE INDEX IF NOT EXISTS idx_fund_pockets_family
@@ -332,10 +377,16 @@ async function migrate(db) {
       ON fund_pocket_member_targets(pocket_id);
     CREATE INDEX IF NOT EXISTS idx_categories_family ON categories(family_id);
     CREATE INDEX IF NOT EXISTS idx_budgets_family_month ON budgets(family_id, month);
+    CREATE INDEX IF NOT EXISTS idx_shopping_items_family_month
+      ON shopping_items(family_id, month, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_budget_overrides_family_month
       ON budget_month_overrides(family_id, month);
+    CREATE INDEX IF NOT EXISTS idx_budget_overrides_family_category_month
+      ON budget_month_overrides(family_id, category_id, month);
     CREATE INDEX IF NOT EXISTS idx_budget_rules_family_effective
       ON budget_rules(family_id, effective_from);
+    CREATE INDEX IF NOT EXISTS idx_budget_rules_family_category_effective
+      ON budget_rules(family_id, category_id, effective_from DESC);
     CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user
       ON push_subscriptions(user_id);
   `);
@@ -353,6 +404,13 @@ async function ensureFamilyColumns(db) {
     await db.sql.unsafe('ALTER TABLE families ADD COLUMN IF NOT EXISTS transactions_revision INTEGER NOT NULL DEFAULT 0');
     await db.sql.unsafe("ALTER TABLE families ADD COLUMN IF NOT EXISTS space_type TEXT NOT NULL DEFAULT 'family'");
     await db.sql.unsafe('ALTER TABLE families ADD COLUMN IF NOT EXISTS owner_user_id TEXT');
+    await db.sql.unsafe('ALTER TABLE families ADD COLUMN IF NOT EXISTS gemini_api_key_encrypted TEXT');
+    await db.sql.unsafe("ALTER TABLE families ADD COLUMN IF NOT EXISTS gemini_model TEXT NOT NULL DEFAULT 'gemini-3.5-flash'");
+    await db.sql.unsafe('ALTER TABLE families ADD COLUMN IF NOT EXISTS show_recent_transactions INTEGER NOT NULL DEFAULT 1');
+    await db.sql.unsafe('ALTER TABLE families ADD COLUMN IF NOT EXISTS show_spending_plan INTEGER NOT NULL DEFAULT 1');
+    await db.sql.unsafe('ALTER TABLE families ADD COLUMN IF NOT EXISTS show_income_plan INTEGER NOT NULL DEFAULT 1');
+    await db.sql.unsafe('ALTER TABLE families ADD COLUMN IF NOT EXISTS show_fund_plan INTEGER NOT NULL DEFAULT 1');
+    await db.sql.unsafe('ALTER TABLE families ADD COLUMN IF NOT EXISTS show_shopping_plan INTEGER NOT NULL DEFAULT 1');
     await db.sql.unsafe("CREATE UNIQUE INDEX IF NOT EXISTS idx_families_personal_owner ON families(owner_user_id) WHERE space_type = 'personal'");
     return;
   }
@@ -371,6 +429,27 @@ async function ensureFamilyColumns(db) {
   if (!names.has('owner_user_id')) {
     db.sqlite.exec('ALTER TABLE families ADD COLUMN owner_user_id TEXT');
   }
+  if (!names.has('gemini_api_key_encrypted')) {
+    db.sqlite.exec('ALTER TABLE families ADD COLUMN gemini_api_key_encrypted TEXT');
+  }
+  if (!names.has('gemini_model')) {
+    db.sqlite.exec("ALTER TABLE families ADD COLUMN gemini_model TEXT NOT NULL DEFAULT 'gemini-3.5-flash'");
+  }
+  if (!names.has('show_recent_transactions')) {
+    db.sqlite.exec('ALTER TABLE families ADD COLUMN show_recent_transactions INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!names.has('show_spending_plan')) {
+    db.sqlite.exec('ALTER TABLE families ADD COLUMN show_spending_plan INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!names.has('show_income_plan')) {
+    db.sqlite.exec('ALTER TABLE families ADD COLUMN show_income_plan INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!names.has('show_fund_plan')) {
+    db.sqlite.exec('ALTER TABLE families ADD COLUMN show_fund_plan INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!names.has('show_shopping_plan')) {
+    db.sqlite.exec('ALTER TABLE families ADD COLUMN show_shopping_plan INTEGER NOT NULL DEFAULT 1');
+  }
   db.sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_families_personal_owner ON families(owner_user_id) WHERE space_type = 'personal'");
 }
 
@@ -378,6 +457,15 @@ async function ensureTransactionColumns(db) {
   if (db.kind === 'postgres') {
     await db.sql.unsafe('ALTER TABLE transactions ADD COLUMN IF NOT EXISTS paid_from_fund INTEGER NOT NULL DEFAULT 0');
     await db.sql.unsafe('ALTER TABLE transactions ADD COLUMN IF NOT EXISTS fund_pocket_id TEXT');
+    await db.sql.unsafe('ALTER TABLE transactions ADD COLUMN IF NOT EXISTS category_name TEXT');
+    await db.sql.unsafe(`
+      UPDATE transactions t SET category_name = c.name
+      FROM categories c
+      WHERE t.category_id = c.id AND (t.category_name IS NULL OR t.category_name = '')
+    `);
+    await db.sql.unsafe('ALTER TABLE transactions ALTER COLUMN category_id DROP NOT NULL');
+    await db.sql.unsafe('ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_category_id_fkey');
+    await db.sql.unsafe('ALTER TABLE transactions ALTER COLUMN category_name SET NOT NULL');
     return;
   }
 
@@ -389,12 +477,72 @@ async function ensureTransactionColumns(db) {
   if (!names.has('fund_pocket_id')) {
     db.sqlite.exec('ALTER TABLE transactions ADD COLUMN fund_pocket_id TEXT');
   }
+
+  const categoryColumn = columns.find((column) => (column.column_name || column.name) === 'category_id');
+  const categoryForeignKey = db.sqlite.prepare('PRAGMA foreign_key_list(transactions)').all()
+    .some((foreignKey) => foreignKey.from === 'category_id');
+  if (!names.has('category_name') || categoryColumn?.notnull || categoryForeignKey) {
+    const categoryExpression = names.has('category_name')
+      ? 'COALESCE(c.name, t.category_name)'
+      : 'c.name';
+    db.sqlite.exec('PRAGMA foreign_keys = OFF');
+    try {
+      db.sqlite.exec('DROP TABLE IF EXISTS transactions_new');
+      db.sqlite.exec(`
+        CREATE TABLE transactions_new (
+          id TEXT PRIMARY KEY,
+          family_id TEXT NOT NULL,
+          category_id TEXT,
+          category_name TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          assigned_to TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('expense', 'income')),
+          amount INTEGER NOT NULL CHECK(amount > 0),
+          paid_from_fund INTEGER NOT NULL DEFAULT 0,
+          fund_pocket_id TEXT,
+          transaction_date TEXT NOT NULL,
+          note TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+          FOREIGN KEY (created_by) REFERENCES users(id),
+          FOREIGN KEY (assigned_to) REFERENCES users(id),
+          FOREIGN KEY (fund_pocket_id) REFERENCES fund_pockets(id)
+        )
+      `);
+      db.sqlite.exec(`
+        INSERT INTO transactions_new
+          (id, family_id, category_id, category_name, created_by, assigned_to, type, amount,
+           paid_from_fund, fund_pocket_id, transaction_date, note, created_at, updated_at)
+        SELECT t.id, t.family_id, t.category_id, ${categoryExpression}, t.created_by, t.assigned_to,
+          t.type, t.amount, t.paid_from_fund, t.fund_pocket_id, t.transaction_date, t.note,
+          t.created_at, t.updated_at
+        FROM transactions t
+        LEFT JOIN categories c ON c.id = t.category_id
+      `);
+      db.sqlite.exec('DROP TABLE transactions');
+      db.sqlite.exec('ALTER TABLE transactions_new RENAME TO transactions');
+      db.sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_transactions_family_date
+          ON transactions(family_id, transaction_date DESC);
+        CREATE INDEX IF NOT EXISTS idx_transactions_family_category_date
+          ON transactions(family_id, category_id, transaction_date DESC);
+        CREATE INDEX IF NOT EXISTS idx_transactions_family_member_date
+          ON transactions(family_id, assigned_to, transaction_date DESC);
+        CREATE INDEX IF NOT EXISTS idx_transactions_family_fund_pocket
+          ON transactions(family_id, fund_pocket_id, type, paid_from_fund)
+      `);
+    } finally {
+      db.sqlite.exec('PRAGMA foreign_keys = ON');
+    }
+  }
 }
 
 async function ensureFundPocketColumns(db) {
   if (db.kind === 'postgres') {
     await db.sql.unsafe('ALTER TABLE fund_pockets ADD COLUMN IF NOT EXISTS monthly_target BIGINT NOT NULL DEFAULT 0');
     await db.sql.unsafe('ALTER TABLE fund_pockets ADD COLUMN IF NOT EXISTS category_id TEXT');
+    await db.sql.unsafe('ALTER TABLE fund_pockets ADD COLUMN IF NOT EXISTS is_archived INTEGER NOT NULL DEFAULT 0');
     await db.sql.unsafe('CREATE UNIQUE INDEX IF NOT EXISTS idx_fund_pockets_family_category ON fund_pockets(family_id, category_id) WHERE category_id IS NOT NULL');
     return;
   }
@@ -406,6 +554,9 @@ async function ensureFundPocketColumns(db) {
   }
   if (!names.has('category_id')) {
     db.sqlite.exec('ALTER TABLE fund_pockets ADD COLUMN category_id TEXT');
+  }
+  if (!names.has('is_archived')) {
+    db.sqlite.exec('ALTER TABLE fund_pockets ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0');
   }
   db.sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_fund_pockets_family_category ON fund_pockets(family_id, category_id) WHERE category_id IS NOT NULL');
 }

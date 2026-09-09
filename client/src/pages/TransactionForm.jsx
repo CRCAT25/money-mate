@@ -8,14 +8,17 @@ import { useFamilyData } from '../context/FamilyContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import api, { errorMessage } from '../utils/api.js';
 import { visibleFundPockets } from '../utils/fund.js';
+import { formatInputAmount } from '../utils/formatters.js';
 
 const localToday = () => {
   const now = new Date();
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 };
 
+const isSmallViewport = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+
 export default function TransactionForm() {
-  const { id: transactionId } = useParams();
+  const { id: transactionId, contributionId } = useParams();
   const [params] = useSearchParams();
   const requestedType = params.get('type');
   const initialMode = requestedType === 'income' || requestedType === 'fund' ? 'income' : 'expense';
@@ -23,26 +26,74 @@ export default function TransactionForm() {
   const { family, user } = useAuth();
   const { categories, touch, loadFund, prefetchPages, loading: baseLoading, isPersonal } = useFamilyData();
   const { notify } = useToast();
+  const defaultEntryKind = family?.type === 'family' ? 'fund' : 'regular';
   const [form, setForm] = useState({
     type: initialMode,
-    amount: '', categoryId: '', transactionDate: localToday(), note: '', paidFromFund: false, fundPocketId: '',
+    amount: '', categoryId: '', transactionDate: localToday(), note: '', paidFromFund: initialMode === 'expense' && defaultEntryKind === 'fund', fundPocketId: '',
   });
   const [mode, setMode] = useState(initialMode);
-  const [entryKind, setEntryKind] = useState(requestedType === 'fund' ? 'fund' : 'regular');
+  const [entryKind, setEntryKind] = useState(requestedType === 'fund' ? 'fund' : defaultEntryKind);
   const [fund, setFund] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [loading, setLoading] = useState(Boolean(transactionId));
+  const [contributionPocket, setContributionPocket] = useState(null);
+  const [contributionOwner, setContributionOwner] = useState(null);
+  const [originalContributionDate, setOriginalContributionDate] = useState(null);
+  const [loading, setLoading] = useState(Boolean(transactionId || contributionId));
+  const [isMobile, setIsMobile] = useState(isSmallViewport);
+  const [keypadOpen, setKeypadOpen] = useState(false);
+  const [keypadExpression, setKeypadExpression] = useState('');
   const amountInput = useRef(null);
+  const isContributionEdit = Boolean(contributionId);
+
+  const displayedAmount = formatAmountExpression(keypadExpression || form.amount);
+
+  const liveCalculationResult = useMemo(() => {
+    const current = keypadExpression || String(form.amount || '');
+    if (!/[+\-*/]/.test(current)) return null;
+    const clean = current.replace(/[+\-*/]+$/, '');
+    if (!clean) return null;
+    return evaluateAmountExpression(clean);
+  }, [keypadExpression, form.amount]);
+
+  useEffect(() => {
+    if (!keypadOpen && keypadExpression && /[+\-*/]/.test(keypadExpression)) {
+      const clean = keypadExpression.replace(/[+\-*/]+$/, '');
+      const evaluated = evaluateAmountExpression(clean);
+      if (evaluated && evaluated > 0) {
+        setForm((currentForm) => ({ ...currentForm, amount: String(evaluated) }));
+        setKeypadExpression(String(evaluated));
+      }
+    }
+  }, [keypadOpen, keypadExpression]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 767px)');
+    const handleViewportChange = (event) => setIsMobile(event.matches);
+    mediaQuery.addEventListener?.('change', handleViewportChange);
+    return () => mediaQuery.removeEventListener?.('change', handleViewportChange);
+  }, []);
 
   const filteredCategories = useMemo(() => categories.filter((item) => item.type === form.type), [categories, form.type]);
   useEffect(() => {
-    if (!transactionId) return;
-    api.get(`/transactions/${transactionId}`).then(({ data }) => {
+    if (!transactionId && !contributionId) return;
+    const endpoint = contributionId ? `/fund/contributions/${contributionId}` : `/transactions/${transactionId}`;
+    api.get(endpoint).then(({ data }) => {
+      if (contributionId) {
+        setMode('income');
+        setEntryKind('fund');
+        setContributionPocket(data.pocket);
+        setContributionOwner(data.contributor);
+        setOriginalContributionDate(data.contributionDate);
+        setKeypadExpression(String(data.amount));
+        setForm({ type: 'income', amount: String(data.amount), categoryId: '', transactionDate: data.contributionDate, note: data.note || '', paidFromFund: false, fundPocketId: data.pocket.id });
+        return;
+      }
       setMode(data.type);
       setEntryKind(data.type === 'expense' && data.paidFromFund ? 'fund' : 'regular');
+      setKeypadExpression(String(data.amount));
       setForm({ type: data.type, amount: String(data.amount), categoryId: data.category.id, transactionDate: data.transactionDate, note: data.note || '', paidFromFund: data.paidFromFund || false, fundPocketId: data.fundPocket?.id || '' });
     }).catch((error) => { notify(errorMessage(error), 'error'); navigate('/'); }).finally(() => setLoading(false));
-  }, [transactionId, navigate, notify]);
+  }, [contributionId, transactionId, navigate, notify]);
 
   useEffect(() => {
     if (form.categoryId && !filteredCategories.some((item) => item.id === form.categoryId)) {
@@ -63,25 +114,27 @@ export default function TransactionForm() {
       setFund(nextFund);
       setForm((current) => {
         if (!nextPockets.length || nextPockets.some((pocket) => pocket.id === current.fundPocketId)) return current;
-        const preferred = nextPockets.find((pocket) => pocket.monthlyTarget > 0)
-          || nextPockets.find((pocket) => pocket.balance > 0)
-          || nextPockets[0];
-        return { ...current, fundPocketId: preferred.id };
+        const preferred = mode === 'expense' && entryKind === 'fund'
+          ? nextPockets.find((pocket) => pocket.balance > 0)
+          : nextPockets.find((pocket) => pocket.monthlyTarget > 0)
+            || nextPockets.find((pocket) => pocket.balance > 0)
+            || nextPockets[0];
+        return { ...current, fundPocketId: preferred?.id || '' };
       });
     }).catch(() => {});
     return () => { active = false; };
-  }, [isPersonal, loadFund, form.transactionDate]);
+  }, [entryKind, isPersonal, loadFund, form.transactionDate, mode]);
 
   const changeMode = (nextMode) => {
     if (nextMode === mode) return;
     setMode(nextMode);
-    setEntryKind('regular');
+    const nextEntryKind = isPersonal ? 'regular' : 'fund';
+    setEntryKind(nextEntryKind);
     setForm((current) => ({
       ...current,
       type: nextMode,
       categoryId: '',
-      paidFromFund: false,
-      fundPocketId: '',
+      paidFromFund: nextEntryKind === 'fund' && nextMode === 'expense',
     }));
   };
   const changeEntryKind = (nextKind) => {
@@ -113,8 +166,46 @@ export default function TransactionForm() {
   };
   const submit = async (event) => {
     event.preventDefault();
+    let currentAmount = form.amount;
+    if (keypadExpression && /[+\-*/]/.test(keypadExpression)) {
+      const clean = keypadExpression.replace(/[+\-*/]+$/, '');
+      const evaluated = evaluateAmountExpression(clean);
+      if (evaluated && evaluated > 0) {
+        currentAmount = String(evaluated);
+        setForm((current) => ({ ...current, amount: currentAmount }));
+        setKeypadExpression(currentAmount);
+      }
+    }
+
+    if (isContributionEdit) {
+      const total = Number(currentAmount);
+      if (!total) return notify('Vui lòng nhập số tiền nạp quỹ.', 'error');
+      if (!selectedPocket) return notify('Vui lòng chọn quỹ nhận tiền.', 'error');
+      setSubmitting(true);
+      try {
+        const { data } = await api.patch(`/fund/contributions/${contributionId}`, {
+          amount: total,
+          contributionDate: form.transactionDate,
+          pocketId: form.fundPocketId,
+          note: form.note,
+        });
+        notify(data.message);
+        touch();
+        void prefetchPages([
+          localToday().slice(0, 7),
+          originalContributionDate?.slice(0, 7),
+          form.transactionDate.slice(0, 7),
+        ].filter(Boolean));
+        navigate('/');
+      } catch (error) {
+        notify(errorMessage(error), 'error');
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
     if (mode === 'income' && entryKind === 'fund' && !transactionId && !isPersonal) {
-      const total = Number(form.amount);
+      const total = Number(currentAmount);
       if (!total) return notify('Vui lòng nhập số tiền nạp quỹ.', 'error');
       setSubmitting(true);
       try {
@@ -130,7 +221,8 @@ export default function TransactionForm() {
         void prefetchPages(form.transactionDate.slice(0, 7));
         loadFund(form.transactionDate.slice(0, 7)).then((entry) => setFund(entry?.data || null)).catch(() => {});
         setForm((current) => ({ ...current, amount: '', note: '' }));
-        window.requestAnimationFrame(() => amountInput.current?.focus());
+        setKeypadExpression('');
+        if (!isMobile) window.requestAnimationFrame(() => amountInput.current?.focus());
       } catch (error) {
         notify(errorMessage(error), 'error');
       } finally {
@@ -138,17 +230,17 @@ export default function TransactionForm() {
       }
       return;
     }
-    if (!form.amount) return notify('Vui lòng nhập số tiền.', 'error');
+    if (!currentAmount) return notify('Vui lòng nhập số tiền.', 'error');
     if (!form.categoryId) return notify('Vui lòng chọn một danh mục.', 'error');
     if (isFundExpense && !selectedPocket) return notify('Vui lòng chọn quỹ thanh toán.', 'error');
-    if (!transactionId && isFundExpense && selectedPocket && Number(form.amount) > selectedPocket.balance) {
+    if (!transactionId && isFundExpense && selectedPocket && Number(currentAmount) > selectedPocket.balance) {
       return notify(`Số dư ${selectedPocket.name} không đủ cho khoản chi này.`, 'error');
     }
     setSubmitting(true);
     try {
       const payload = {
         type: form.type,
-        amount: Number(form.amount),
+        amount: Number(currentAmount),
         categoryId: form.categoryId,
         transactionDate: form.transactionDate,
         note: form.note,
@@ -163,7 +255,8 @@ export default function TransactionForm() {
         navigate('/');
       } else {
         setForm((current) => ({ ...current, amount: '', categoryId: '', note: '', paidFromFund: isFundExpense }));
-        window.requestAnimationFrame(() => amountInput.current?.focus());
+        setKeypadExpression('');
+        if (!isMobile) window.requestAnimationFrame(() => amountInput.current?.focus());
       }
     } catch (error) {
       notify(errorMessage(error), 'error');
@@ -172,20 +265,83 @@ export default function TransactionForm() {
     }
   };
 
-  const changeMainAmount = (value) => {
-    const amount = value.replace(/\D/g, '').slice(0, 12);
+  const changeMainAmount = (amount) => {
     setForm((current) => ({ ...current, amount }));
+    setKeypadExpression(amount);
+  };
+
+  const updateKeypadExpression = (nextExpression) => {
+    setKeypadExpression(nextExpression);
+    if (!/[+\-*/]/.test(nextExpression)) {
+      setForm((current) => ({ ...current, amount: normalizeKeypadDigits(nextExpression) }));
+    }
+  };
+
+  const handleKeypadKey = (key) => {
+    const current = keypadExpression || String(form.amount || '');
+    if (/^\d+$/.test(key)) {
+      const candidate = `${current}${key}`;
+      if (candidate.length > 250) return;
+      const operands = candidate.split(/[+\-*/]/);
+      const lastOperand = operands[operands.length - 1] || '';
+      if (lastOperand.replace(/\D/g, '').length > 12) return;
+      updateKeypadExpression(normalizeKeypadExpression(candidate));
+      return;
+    }
+    if (key === 'AC') {
+      updateKeypadExpression('');
+      setForm((currentForm) => ({ ...currentForm, amount: '' }));
+      return;
+    }
+    if (key === 'Del') {
+      const next = current.slice(0, -1);
+      updateKeypadExpression(next);
+      if (!next) {
+        setForm((currentForm) => ({ ...currentForm, amount: '' }));
+      }
+      return;
+    }
+    if (key === 'OK') {
+      const clean = current.replace(/[+\-*/]+$/, '');
+      if (!clean) {
+        setForm((currentForm) => ({ ...currentForm, amount: '' }));
+        setKeypadExpression('');
+        setKeypadOpen(false);
+        return;
+      }
+      const result = evaluateAmountExpression(clean);
+      if (result === null) return notify('Biểu thức số tiền chưa hợp lệ.', 'error');
+      if (result <= 0) return notify('Số tiền sau khi tính toán phải lớn hơn 0.', 'error');
+      setForm((formState) => ({ ...formState, amount: String(result) }));
+      setKeypadExpression(String(result));
+      setKeypadOpen(false);
+      amountInput.current?.blur();
+      return;
+    }
+    if (!current || /[+\-*/]$/.test(current)) {
+      if (!current) return;
+      updateKeypadExpression(`${current.slice(0, -1)}${key}`);
+      return;
+    }
+    if (current.length > 250) return;
+    updateKeypadExpression(`${current}${key}`);
   };
 
   const fundPockets = visibleFundPockets(fund?.pockets);
-  const spendablePockets = fundPockets.filter((pocket) => pocket.balance > 0 || pocket.id === form.fundPocketId);
-  const isFundContribution = mode === 'income' && entryKind === 'fund' && !transactionId && !isPersonal;
+  const selectableFundPockets = contributionPocket && !fundPockets.some((pocket) => pocket.id === contributionPocket.id)
+    ? [...fundPockets, contributionPocket]
+    : fundPockets;
+  const spendablePockets = selectableFundPockets.filter((pocket) => pocket.balance > 0 || (transactionId && pocket.id === form.fundPocketId));
+  const isFundContribution = mode === 'income' && entryKind === 'fund' && !transactionId && !contributionId && !isPersonal;
   const isFundExpense = mode === 'expense' && entryKind === 'fund' && !isPersonal;
-  const selectedPocket = fundPockets.find((pocket) => pocket.id === form.fundPocketId);
+  const showFundContributionFields = isFundContribution || isContributionEdit;
+  const incomeLabel = isPersonal ? 'Tiền thu' : 'Tiền nạp';
+  const selectedPocket = selectableFundPockets.find((pocket) => pocket.id === form.fundPocketId);
   const fundExpenseExceedsBalance = Boolean(!transactionId && isFundExpense && selectedPocket && Number(form.amount) > selectedPocket.balance);
-  const submitDisabled = submitting || !form.amount || (isFundContribution
+  const submitDisabled = submitting || !form.amount || (showFundContributionFields
     ? !selectedPocket
-    : !form.categoryId || (isFundExpense && (!selectedPocket || fundExpenseExceedsBalance)));
+    : !form.categoryId || (isFundExpense && (!selectedPocket || fundExpenseExceedsBalance)))
+    || (isMobile && keypadOpen && /[+\-*/]/.test(keypadExpression));
 
   if (loading || baseLoading) return <TransactionFormSkeleton />;
 
@@ -196,14 +352,24 @@ export default function TransactionForm() {
           <button type="button" onClick={() => navigate(-1)} className="grid size-9 place-items-center rounded-full bg-white/70 text-ink/48 shadow-sm transition hover:bg-white hover:text-ink" aria-label="Quay lại">
             <ArrowLeft className="size-[18px]" />
           </button>
-          <div className="mx-auto grid w-full max-w-[280px] grid-cols-2 rounded-full bg-ink/[0.05] p-0.5">
-            <TypeButton active={mode === 'expense'} onClick={() => changeMode('expense')} label="Tiền chi" tone="expense" />
-            <TypeButton active={mode === 'income'} onClick={() => changeMode('income')} label="Tiền thu" tone="income" />
-          </div>
+          {isContributionEdit ? (
+            <div className="mx-auto rounded-full bg-ink/[0.05] px-4 py-2 text-[12px] font-medium text-forest">Sửa khoản nạp quỹ</div>
+          ) : (
+            <div className="mx-auto grid w-full max-w-[280px] grid-cols-2 rounded-full bg-ink/[0.05] p-0.5">
+              <TypeButton active={mode === 'expense'} onClick={() => changeMode('expense')} label="Tiền chi" tone="expense" />
+              <TypeButton active={mode === 'income'} onClick={() => changeMode('income')} label={incomeLabel} tone="income" />
+            </div>
+          )}
           <span />
         </header>
 
-        <form onSubmit={submit} className="pb-[calc(136px+env(safe-area-inset-bottom))] lg:pb-0">
+        <form
+          onSubmit={submit}
+          onFocusCapture={(event) => {
+            if (event.target !== amountInput.current) setKeypadOpen(false);
+          }}
+          className={`${keypadOpen && isMobile ? 'pb-[calc(430px+env(safe-area-inset-bottom))]' : 'pb-[calc(136px+env(safe-area-inset-bottom))]'} lg:pb-0`}
+        >
           <div className="divide-y divide-ink/[0.07] px-4 sm:px-6">
             <div className="grid min-h-[54px] grid-cols-[70px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[112px_minmax(0,1fr)]">
               <span className="text-[13px] font-medium text-ink/68 sm:text-sm">Ngày</span>
@@ -226,27 +392,115 @@ export default function TransactionForm() {
               <input className="min-h-10 min-w-0 bg-transparent px-2 text-[13px] font-normal text-ink outline-none placeholder:text-ink/25 sm:text-sm" maxLength="240" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="Chưa nhập" />
             </label>
 
-            <label className="grid min-h-[56px] grid-cols-[70px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[112px_minmax(0,1fr)]">
-              <span className="text-[13px] font-medium text-ink/68 sm:text-sm">{form.type === 'expense' ? 'Tiền chi' : 'Tiền thu'}</span>
-              <span className="flex min-w-0 items-center gap-2">
-                <input
-                  ref={amountInput}
-                  className="h-9 min-w-0 flex-1 rounded-[9px] bg-sun/12 px-2.5 text-[18px] font-normal tracking-[-0.02em] text-ink outline-none placeholder:text-ink/28 sm:h-10 sm:text-xl"
-                  type="text"
-                  inputMode="numeric"
-                  value={formatInputAmount(form.amount)}
-                  onChange={(event) => changeMainAmount(event.target.value)}
-                  placeholder="0"
-                  autoFocus
-                  required
-                  aria-label={form.type === 'expense' ? 'Tiền chi' : 'Tiền thu'}
-                />
-                <span className="shrink-0 text-sm font-normal text-ink/48">{currencySymbol(family.currency)}</span>
-              </span>
-            </label>
+            <div className="grid min-h-[56px] grid-cols-[70px_minmax(0,1fr)] items-start gap-2 py-2 sm:grid-cols-[112px_minmax(0,1fr)] sm:py-2.5">
+              <span className="pt-2 text-[13px] font-medium text-ink/68 sm:text-sm">{form.type === 'expense' ? 'Tiền chi' : incomeLabel}</span>
+              <div className="flex min-w-0 items-start gap-2">
+                {isMobile ? (
+                  <div className="relative min-w-0 flex-1">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setKeypadOpen(true)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setKeypadOpen(true);
+                        }
+                      }}
+                      className={`money-input group relative flex min-h-9 w-full min-w-0 cursor-pointer flex-col justify-center rounded-[9px] bg-sun/12 px-2.5 py-1.5 transition-colors sm:min-h-10 ${
+                        keypadOpen ? 'ring-2 ring-forest/30 bg-sun/18' : 'hover:bg-sun/15'
+                      }`}
+                      aria-label={form.type === 'expense' ? 'Tiền chi' : incomeLabel}
+                    >
+                      <div className="break-words [overflow-wrap:anywhere] text-[18px] font-normal leading-snug tracking-[-0.02em] text-ink sm:text-xl">
+                        {displayedAmount ? (
+                          <span>
+                            {displayedAmount}
+                            {keypadOpen && (
+                              <span
+                                className="amount-focus-caret ml-0.5 inline-block h-[1.15em] w-[2px] align-middle bg-forest"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-ink/28">
+                            0
+                            {keypadOpen && (
+                              <span
+                                className="amount-focus-caret ml-0.5 inline-block h-[1.15em] w-[2px] align-middle bg-forest"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </span>
+                        )}
+                      </div>
+                      {liveCalculationResult !== null && (
+                        <div className="mt-1 text-[11px] font-medium text-forest sm:text-xs">
+                          = {formatInputAmount(liveCalculationResult)} {currencySymbol(family.currency)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative min-w-0 flex-1">
+                    <textarea
+                      ref={amountInput}
+                      rows={1}
+                      value={displayedAmount}
+                      onChange={(event) => {
+                        const raw = event.target.value;
+                        const cleaned = raw
+                          .replace(/[×xX]/g, '*')
+                          .replace(/÷/g, '/')
+                          .replace(/−/g, '-')
+                          .replace(/\./g, '')
+                          .replace(/[^\d+\-*/]/g, '');
+                        const candidate = normalizeKeypadExpression(cleaned);
+                        updateKeypadExpression(candidate);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          const current = keypadExpression || String(form.amount || '');
+                          const clean = current.replace(/[+\-*/]+$/, '');
+                          if (clean) {
+                            const result = evaluateAmountExpression(clean);
+                            if (result !== null && result > 0) {
+                              setForm((formState) => ({ ...formState, amount: String(result) }));
+                              setKeypadExpression(String(result));
+                            }
+                          }
+                        }
+                      }}
+                      onBlur={() => {
+                        const current = keypadExpression || String(form.amount || '');
+                        const clean = current.replace(/[+\-*/]+$/, '');
+                        if (clean && /[+\-*/]/.test(clean)) {
+                          const result = evaluateAmountExpression(clean);
+                          if (result !== null && result > 0) {
+                            setForm((formState) => ({ ...formState, amount: String(result) }));
+                            setKeypadExpression(String(result));
+                          }
+                        }
+                      }}
+                      className="money-input min-h-9 w-full min-w-0 resize-none rounded-[9px] bg-sun/12 px-2.5 py-1.5 text-[18px] font-normal tracking-[-0.02em] text-ink outline-none placeholder:text-ink/28 break-words [overflow-wrap:anywhere] leading-snug focus:ring-2 focus:ring-forest/30 sm:min-h-10 sm:text-xl"
+                      placeholder="0"
+                      aria-label={form.type === 'expense' ? 'Tiền chi' : incomeLabel}
+                    />
+                    {liveCalculationResult !== null && (
+                      <div className="mt-1 text-[11px] font-medium text-forest sm:text-xs">
+                        = {formatInputAmount(liveCalculationResult)} {currencySymbol(family.currency)}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <span className="shrink-0 pt-2 text-sm font-normal text-ink/48">{currencySymbol(family.currency)}</span>
+              </div>
+            </div>
           </div>
 
-          {!isPersonal && !transactionId && (
+          {!isPersonal && !transactionId && !contributionId && (
             <div className="px-4 pt-3 sm:px-6">
               <div className="flex items-center justify-between gap-3 rounded-[12px] border border-ink/[0.06] bg-mint/25 p-2.5">
                 <div className="min-w-0">
@@ -255,23 +509,23 @@ export default function TransactionForm() {
                 </div>
                 <div className="grid shrink-0 grid-cols-2 rounded-[10px] bg-ink/[0.05] p-0.5">
                   <SourceButton active={entryKind === 'regular'} onClick={() => changeEntryKind('regular')} tone={mode}>{mode === 'expense' ? 'Chi tiêu bình thường' : 'Thu bình thường'}</SourceButton>
-                  <SourceButton active={entryKind === 'fund'} onClick={() => changeEntryKind('fund')} tone={mode}>{mode === 'expense' ? 'Chi tiêu quỹ' : 'Thu trong quỹ'}</SourceButton>
+                  <SourceButton active={entryKind === 'fund'} onClick={() => changeEntryKind('fund')} tone={mode}>{mode === 'expense' ? 'Chi tiêu quỹ' : 'Nạp vào quỹ'}</SourceButton>
                 </div>
               </div>
             </div>
           )}
 
-          {isFundContribution ? (
+          {showFundContributionFields ? (
             <div className="px-4 pb-5 pt-4 sm:px-6 sm:pb-6">
               <div>
                 <div className="mb-3 flex items-end justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 text-[14px] font-medium text-ink"><Landmark className="size-4 text-forest" /> Danh mục nạp quỹ</div>
-                    <p className="mt-0.5 text-[10px] font-normal text-ink/38">Chọn mục nhận tiền</p>
+                    <p className="mt-0.5 text-[10px] font-normal text-ink/38">{isContributionEdit && contributionOwner ? `Khoản nạp của ${contributionOwner.displayName}` : 'Chọn mục nhận tiền'}</p>
                   </div>
                   <button type="button" onClick={() => navigate('/fund-plans')} className="min-h-8 shrink-0 rounded-[9px] border border-ink/[0.07] bg-white/55 px-2.5 text-[10px] font-medium text-forest transition active:scale-[0.98]">Quản lý quỹ</button>
                 </div>
-                <FundPocketGrid pockets={fundPockets} value={form.fundPocketId} onChange={(fundPocketId) => setForm((current) => ({ ...current, fundPocketId }))} currency={family.currency} userId={user.id} />
+                <FundPocketGrid pockets={selectableFundPockets} value={form.fundPocketId} onChange={(fundPocketId) => setForm((current) => ({ ...current, fundPocketId }))} currency={family.currency} userId={user.id} />
                 <p className="mt-2.5 text-[9px] font-normal text-ink/32">Tiền được ghi nhận cho tài khoản đang đăng nhập và không cộng vào thu nhập thực tế.</p>
               </div>
             </div>
@@ -280,7 +534,7 @@ export default function TransactionForm() {
               {isFundExpense && (
                 <div className="mb-4 rounded-[12px] border border-ink/[0.06] bg-mint/25 p-2.5">
                   <div className="flex items-center gap-1.5 text-[12px] font-medium text-ink"><Landmark className="size-3.5 text-forest" /> Chọn quỹ thanh toán</div>
-                  <p className="mt-0.5 text-[9px] font-normal text-ink/38">Tổng số dư quỹ {formatInputAmount(fund?.balance || 0) || '0'} {currencySymbol(family.currency)}</p>
+                  <p className="mt-0.5 text-[9px] font-normal text-ink/38">Số dư có thể thanh toán {formatInputAmount(fund?.balance || 0) || '0'} {currencySymbol(family.currency)}</p>
                   {spendablePockets.length ? (
                     <PocketSelector pockets={spendablePockets} value={form.fundPocketId} onChange={(fundPocketId) => setForm((current) => ({ ...current, fundPocketId, paidFromFund: true }))} currency={family.currency} compact />
                   ) : <p className="mt-2.5 rounded-[9px] bg-white/50 px-3 py-2.5 text-center text-[10px] font-normal text-coral">Quỹ chưa có số dư để thanh toán.</p>}
@@ -324,15 +578,103 @@ export default function TransactionForm() {
             </div>
           )}
 
-          <div className="fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom))] z-30 border-t border-ink/[0.07] bg-paper/95 px-4 py-2 shadow-[0_-8px_22px_rgba(32,49,44,0.07)] backdrop-blur-xl lg:static lg:border-t lg:bg-transparent lg:px-6 lg:pb-5 lg:pt-0 lg:shadow-none">
+          <div className={`${keypadOpen && isMobile ? 'hidden' : 'fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom))]'} z-30 border-t border-ink/[0.07] bg-paper/95 px-4 py-2 shadow-[0_-8px_22px_rgba(32,49,44,0.07)] backdrop-blur-xl lg:static lg:border-t lg:bg-transparent lg:px-6 lg:pb-5 lg:pt-0 lg:shadow-none`}>
             <button className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-[12px] px-5 text-[13px] font-semibold text-white shadow-md transition active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50 ${mode === 'income' ? 'bg-forest shadow-forest/20 hover:bg-[#315f54]' : 'bg-coral shadow-coral/20 hover:bg-[#d9634b]'}`} disabled={submitDisabled}>
-              {submitting ? <LoaderCircle className="size-[18px] animate-spin" /> : <><Check className="size-[18px]" /> {transactionId ? 'Lưu thay đổi' : isFundContribution ? `Nạp vào ${selectedPocket?.name || 'quỹ chung'}` : isFundExpense ? `Chi từ ${selectedPocket?.name || 'quỹ'}` : mode === 'expense' ? 'Nhập khoản chi' : 'Nhập khoản thu'}</>}
+              {submitting ? <LoaderCircle className="size-[18px] animate-spin" /> : <><Check className="size-[18px]" /> {transactionId || contributionId ? 'Lưu thay đổi' : isFundContribution ? `Nạp vào ${selectedPocket?.name || 'quỹ chung'}` : isFundExpense ? `Chi từ ${selectedPocket?.name || 'quỹ'}` : mode === 'expense' ? 'Nhập khoản chi' : 'Nhập khoản thu'}</>}
             </button>
           </div>
         </form>
       </section>
+      {isMobile && keypadOpen && <AmountKeypad onKey={handleKeypadKey} />}
     </div>
   );
+}
+
+function AmountKeypad({ onKey }) {
+  const keys = [
+    ['7', 'number'], ['8', 'number'], ['9', 'number'], ['/', 'operator'], ['AC', 'action'],
+    ['4', 'number'], ['5', 'number'], ['6', 'number'], ['*', 'operator'], ['Del', 'delete'],
+    ['1', 'number'], ['2', 'number'], ['3', 'number'], ['-', 'operator'], ['OK', 'confirm row-span-2'],
+    ['0', 'number'], ['00', 'number col-span-2'], ['+', 'operator'],
+  ];
+  return (
+    <section className="keypad-surface fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom))] z-50 rounded-t-[26px] border border-ink/[0.08] bg-white/95 px-3 pb-3 pt-3 shadow-[0_-12px_32px_rgba(32,49,44,0.16)] backdrop-blur-xl md:hidden">
+      <div className="mx-auto mb-2.5 h-1 w-10 rounded-full bg-ink/15" />
+      <div className="grid grid-cols-5 grid-rows-4 gap-2">
+        {keys.map(([key, variant]) => (
+          <button
+            key={key}
+            type="button"
+            className={`keypad-key min-h-[56px] rounded-[13px] text-[22px] font-medium shadow-sm transition active:scale-[0.97] ${keypadButtonClass(variant)}`}
+            onClick={() => onKey(key)}
+            aria-label={keypadAriaLabel(key)}
+          >
+            {key === '/' ? '÷' : key === '*' ? '×' : key === '-' ? '−' : key}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function keypadButtonClass(variant) {
+  const placement = variant.includes('confirm') ? 'row-span-2' : variant.includes('col-span-2') ? 'col-span-2' : '';
+  if (variant.includes('confirm')) return `${placement} bg-[#e9f5ff] text-[#1598d5]`;
+  if (variant.includes('delete')) return `${placement} bg-[#fff0ed] text-coral`;
+  if (variant.includes('action')) return `${placement} bg-[#f0f0f0] text-ink/75`;
+  if (variant.includes('operator')) return `${placement} bg-[#f0f0f0] text-ink/70`;
+  return `${placement} bg-[#f1f1f1] text-ink/80`;
+}
+
+function keypadAriaLabel(key) {
+  if (key === 'AC') return 'Xóa toàn bộ số tiền';
+  if (key === 'Del') return 'Xóa một ký tự';
+  if (key === 'OK') return 'Xác nhận số tiền';
+  if (key === '/') return 'Chia';
+  if (key === '*') return 'Nhân';
+  if (key === '-') return 'Trừ';
+  if (key === '+') return 'Cộng';
+  return key;
+}
+
+function normalizeKeypadDigits(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 12);
+  return digits.replace(/^0+(?=\d)/, '') || (digits ? '0' : '');
+}
+
+function normalizeKeypadExpression(value) {
+  return String(value || '').replace(/\d+/g, (digits) => normalizeKeypadDigits(digits));
+}
+
+function formatAmountExpression(value) {
+  if (!value) return '';
+  return String(value)
+    .replace(/\s+/g, '')
+    .replace(/\d+/g, (digits) => formatInputAmount(digits))
+    .replace(/\*/g, ' × ')
+    .replace(/\//g, ' ÷ ')
+    .replace(/\+/g, ' + ')
+    .replace(/-/g, ' − ');
+}
+
+function evaluateAmountExpression(expression) {
+  const normalized = String(expression || '').trim().replace(/[+\-*/]+$/, '');
+  if (!normalized) return null;
+  if (!/^\d+(?:[+\-*/]\d+)*$/.test(normalized)) return null;
+  const tokens = normalized.match(/\d+|[+\-*/]/g) || [];
+  if (!tokens.length) return null;
+  const values = [Number(tokens[0])];
+  for (let index = 1; index < tokens.length; index += 2) {
+    const operator = tokens[index];
+    const operand = Number(tokens[index + 1]);
+    if (!Number.isSafeInteger(operand) || (operator === '/' && operand === 0)) return null;
+    if (operator === '*') values[values.length - 1] *= operand;
+    else if (operator === '/') values[values.length - 1] = Math.round(values[values.length - 1] / operand);
+    else values.push(operator === '-' ? -operand : operand);
+    if (!Number.isSafeInteger(values[values.length - 1])) return null;
+  }
+  const result = values.reduce((total, value) => total + value, 0);
+  return Number.isSafeInteger(result) && result > 0 ? result : null;
 }
 
 function TransactionFormSkeleton() {
@@ -404,7 +746,7 @@ function FundPocketGrid({ pockets = [], value, onChange, currency, userId }) {
           </div>
           {memberTarget?.target > 0 && (
             <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-ink/[0.08]">
-              <div className="h-full rounded-full bg-forest transition-[width] duration-500" style={{ width: `${memberPercentage}%` }} />
+              <div className={`h-full rounded-full transition-[width] duration-500 ${memberTarget.remaining > 0 ? 'bg-coral' : 'bg-forest'}`} style={{ width: `${memberPercentage}%` }} />
             </div>
           )}
         </div>
@@ -445,9 +787,4 @@ function currencySymbol(currency) {
   if (currency === 'USD') return '$';
   if (currency === 'EUR') return '€';
   return currency;
-}
-
-function formatInputAmount(value) {
-  if (!value) return '';
-  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Number(value));
 }

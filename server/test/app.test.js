@@ -9,6 +9,8 @@ process.env.CLIENT_URL = 'http://localhost:5173';
 process.env.VAPID_PUBLIC_KEY = 'BFhokV6XJhdLaLVS9_mPMD2mGbILghzufVL-zwdRUmv1VBOz5BIJPx9CBgMVzBtpHX2Vi6IEjU-bl9no1w3iJdk';
 process.env.VAPID_PRIVATE_KEY = 'MyUf1QJ1XZdGf_iD4J4dzeWqsB2dWEUaSFFWyDgucsc';
 process.env.VAPID_SUBJECT = 'mailto:test@moneymate.vn';
+process.env.GEMINI_MODEL = 'gemini-2.5-flash';
+process.env.GEMINI_ENCRYPTION_KEY = 'test-gemini-encryption-key';
 
 const { createApp } = await import('../src/app.js');
 const { closeDb } = await import('../src/db.js');
@@ -254,6 +256,33 @@ test('profile, family settings, member removal and account deletion work', async
     .send({ name: 'Nhà Bình Yên', currency: 'VND', language: 'vi' })
     .expect(200);
 
+  const familyDetails = await request(app).get(`/api/spaces/${family.body.id}`).set(ownerAuth).expect(200);
+  assert.equal(familyDetails.body.showRecentTransactions, false);
+  assert.equal(familyDetails.body.showSpendingPlan, false);
+  assert.equal(familyDetails.body.showFundPlan, true);
+  assert.equal(familyDetails.body.showShoppingPlan, true);
+  await request(app).patch(`/api/spaces/${family.body.id}`).set(ownerAuth).send({
+    name: 'Nhà Bình Yên', currency: 'VND', language: 'vi',
+    showRecentTransactions: false, showSpendingPlan: false, showFundPlan: false, showShoppingPlan: false,
+  }).expect(200);
+  const minimalFamilyDetails = await request(app).get(`/api/spaces/${family.body.id}`).set(ownerAuth).expect(200);
+  assert.equal(minimalFamilyDetails.body.showRecentTransactions, false);
+  assert.equal(minimalFamilyDetails.body.showSpendingPlan, false);
+  assert.equal(minimalFamilyDetails.body.showFundPlan, false);
+  assert.equal(minimalFamilyDetails.body.showShoppingPlan, false);
+  await request(app).patch(`/api/spaces/${family.body.id}`).set(ownerAuth).send({
+    name: 'Nhà Bình Yên', currency: 'VND', language: 'vi',
+    showRecentTransactions: true, showSpendingPlan: false, showFundPlan: true, showShoppingPlan: false,
+  }).expect(200);
+  const customFamilyDetails = await request(app).get(`/api/spaces/${family.body.id}`).set(ownerAuth).expect(200);
+  assert.equal(customFamilyDetails.body.showSpendingPlan, false);
+  assert.equal(customFamilyDetails.body.showFundPlan, true);
+  assert.equal(customFamilyDetails.body.showShoppingPlan, false);
+  await request(app).patch(`/api/spaces/${family.body.id}`).set(ownerAuth).send({
+    name: 'Nhà Bình Yên', currency: 'VND', language: 'vi',
+    showRecentTransactions: true, showSpendingPlan: true, showFundPlan: true, showShoppingPlan: true,
+  }).expect(200);
+
   await request(app).delete(`/api/family/members/${partner.id}`).set(ownerAuth).expect(204);
   const remaining = await request(app).get('/api/family').set(ownerAuth).expect(200);
   assert.equal(remaining.body.members.length, 2);
@@ -361,7 +390,6 @@ test('category and transaction CRUD preserve family data rules', async () => {
     })
     .expect(201);
 
-  await request(app).delete(`/api/categories/${createdCategory.body.id}`).set(auth).expect(409);
   await request(app)
     .patch(`/api/transactions/${createdTransaction.body.id}`)
     .set(auth)
@@ -379,12 +407,20 @@ test('category and transaction CRUD preserve family data rules', async () => {
   assert.equal(detail.body.amount, 375000);
   assert.equal(detail.body.note, 'Thức ăn và cát cho mèo');
 
-  await request(app).delete(`/api/transactions/${createdTransaction.body.id}`).set(auth).expect(204);
   await request(app).delete(`/api/categories/${createdCategory.body.id}`).set(auth).expect(204);
+  const historicalDetail = await request(app).get(`/api/transactions/${createdTransaction.body.id}`).set(auth).expect(200);
+  assert.equal(historicalDetail.body.category.id, null);
+  assert.equal(historicalDetail.body.category.name, 'Chăm thú cưng');
+  const historicalList = await request(app).get('/api/transactions?month=2026-08').set(auth).expect(200);
+  assert.equal(historicalList.body.find((item) => item.id === createdTransaction.body.id).category.name, 'Chăm thú cưng');
+  const historicalReport = await request(app).get('/api/reports/summary?month=2026-08').set(auth).expect(200);
+  assert.ok(historicalReport.body.categories.some((item) => item.name === 'Chăm thú cưng'));
+  const historicalExport = await request(app).get('/api/reports/export?month=2026-08').set(auth).expect(200);
+  assert.match(historicalExport.text, /Chăm thú cưng/);
+
+  await request(app).delete(`/api/transactions/${createdTransaction.body.id}`).set(auth).expect(204);
   const fundAfterCategoryDelete = await request(app).get('/api/fund').set(auth).expect(200);
-  const detachedPocket = fundAfterCategoryDelete.body.pockets.find((pocket) => pocket.id === linkedPocket.id);
-  assert.equal(detachedPocket.name, 'Chăm thú cưng');
-  assert.equal(detachedPocket.category, null);
+  assert.equal(fundAfterCategoryDelete.body.pockets.some((pocket) => pocket.id === linkedPocket.id), false);
 });
 
 test('family fund tracks member contributions and fund-paid expenses independently from income', async () => {
@@ -422,11 +458,43 @@ test('family fund tracks member contributions and fund-paid expenses independent
 
   const initialFund = await request(app).get('/api/fund').set(ownerAuth).expect(200);
   const expenseCategories = await request(app).get('/api/categories').set(ownerAuth).expect(200);
+  const food = expenseCategories.body.find((category) => category.name === 'Ăn uống' && category.type === 'expense');
   const expenseCategoryNames = expenseCategories.body.filter((category) => category.type === 'expense').map((category) => category.name).sort();
   const linkedFundNames = initialFund.body.pockets.filter((pocket) => pocket.category).map((pocket) => pocket.name).sort();
   assert.deepEqual(linkedFundNames, expenseCategoryNames);
   const defaultPocket = initialFund.body.pockets.find((pocket) => pocket.name === 'Quỹ chung');
   assert.ok(defaultPocket);
+
+  await request(app).post('/api/budgets').set(ownerAuth).send({
+    month: '2026-08', categoryId: food.id, amount: 1000001,
+  }).expect(201);
+  const autoFund = await request(app).get('/api/fund?month=2026-08').set(ownerAuth).expect(200);
+  const foodPocket = autoFund.body.pockets.find((pocket) => pocket.category?.id === food.id);
+  assert.equal(foodPocket.monthlyTarget, 1000001);
+  assert.equal(foodPocket.memberTargets.find((member) => member.id === owner.id).target, 500001);
+  assert.equal(foodPocket.memberTargets.find((member) => member.id === partner.id).target, 500000);
+
+  await request(app).post(`/api/fund/pockets/${foodPocket.id}/target`).set(ownerAuth).send({
+    monthlyTarget: 1000001,
+    members: [
+      { userId: owner.id, amount: 700001 },
+      { userId: partner.id, amount: 300000 },
+    ],
+  }).expect(200);
+  const customFund = await request(app).get('/api/fund?month=2026-08').set(ownerAuth).expect(200);
+  const customFoodPocket = customFund.body.pockets.find((pocket) => pocket.id === foodPocket.id);
+  assert.equal(customFoodPocket.memberTargets.find((member) => member.id === owner.id).target, 700001);
+  assert.equal(customFoodPocket.memberTargets.find((member) => member.id === partner.id).target, 300000);
+
+  await request(app).post('/api/budgets').set(ownerAuth).send({
+    month: '2026-08', categoryId: food.id, amount: 2000000,
+  }).expect(201);
+  const resyncedFund = await request(app).get('/api/fund?month=2026-08').set(ownerAuth).expect(200);
+  const resyncedFoodPocket = resyncedFund.body.pockets.find((pocket) => pocket.id === foodPocket.id);
+  assert.equal(resyncedFoodPocket.monthlyTarget, 2000000);
+  assert.equal(resyncedFoodPocket.memberTargets.find((member) => member.id === owner.id).target, 1000000);
+  assert.equal(resyncedFoodPocket.memberTargets.find((member) => member.id === partner.id).target, 1000000);
+
   const createdPocket = await request(app).post('/api/fund/pockets').set(ownerAuth).send({
     name: 'Tiền mặt', color: '#D47A61',
   }).expect(201);
@@ -455,8 +523,6 @@ test('family fund tracks member contributions and fund-paid expenses independent
   assert.equal(beforeExpense.body.income, 0);
   assert.equal(beforeExpense.body.expense, 0);
 
-  const categories = await request(app).get('/api/categories').set(ownerAuth).expect(200);
-  const food = categories.body.find((category) => category.name === 'Ăn uống' && category.type === 'expense');
   const fundedExpense = await request(app).post('/api/transactions').set(ownerAuth).send({
     type: 'expense', amount: 300000, categoryId: food.id,
     transactionDate: '2026-08-15', note: 'Chi từ quỹ', paidFromFund: true, fundPocketId: cashPocketId,
@@ -503,25 +569,47 @@ test('family fund tracks member contributions and fund-paid expenses independent
   const housePocket = await request(app).post('/api/fund/pockets').set(ownerAuth).send({
     name: 'Tiền nhà', color: '#4B83A6',
   }).expect(201);
-  await request(app).post(`/api/fund/pockets/${housePocket.body.pocket.id}/target`).set(ownerAuth).send({
-    monthlyTarget: 10000000,
-    members: [
-      { userId: owner.id, amount: 5000000 },
-      { userId: partner.id, amount: 5000000 },
-    ],
+  await request(app).post('/api/fund/pockets/targets').set(ownerAuth).send({
+    items: [{
+      pocketId: housePocket.body.pocket.id,
+      monthlyTarget: 10000000,
+      members: [
+        { userId: owner.id, amount: 5000000 },
+        { userId: partner.id, amount: 5000000 },
+      ],
+    }],
   }).expect(200);
-  await request(app).post('/api/fund/contributions').set(ownerAuth).send({
+  const houseContribution = await request(app).post('/api/fund/contributions').set(ownerAuth).send({
     contributionDate: '2026-08-15',
     pocketId: housePocket.body.pocket.id,
     contributions: [{ userId: owner.id, amount: 3000000 }],
   }).expect(201);
+  const houseContributionId = houseContribution.body.contributionIds[0];
+  const houseContributionDetails = await request(app)
+    .get(`/api/fund/contributions/${houseContributionId}`)
+    .set(ownerAuth)
+    .expect(200);
+  assert.equal(houseContributionDetails.body.amount, 3000000);
+  assert.equal(houseContributionDetails.body.contributionDate, '2026-08-15');
+  assert.equal(houseContributionDetails.body.pocket.id, housePocket.body.pocket.id);
+  await request(app).patch(`/api/fund/contributions/${houseContribution.body.contributionIds[0]}`)
+    .set(ownerAuth)
+    .send({ amount: 4000000, contributionDate: '2026-08-16', pocketId: housePocket.body.pocket.id, note: 'Điều chỉnh khoản nạp' })
+    .expect(200);
   const augustTracking = await request(app).get('/api/fund?month=2026-08').set(ownerAuth).expect(200);
   const houseInAugust = augustTracking.body.pockets.find((pocket) => pocket.id === housePocket.body.pocket.id);
   assert.equal(houseInAugust.monthlyTarget, 10000000);
-  assert.equal(houseInAugust.monthlyContributed, 3000000);
-  assert.equal(houseInAugust.monthlyRemaining, 7000000);
-  assert.equal(houseInAugust.memberTargets.find((member) => member.id === owner.id).remaining, 2000000);
+  assert.equal(houseInAugust.monthlyContributed, 4000000);
+  assert.equal(houseInAugust.monthlyRemaining, 6000000);
+  assert.equal(houseInAugust.memberTargets.find((member) => member.id === owner.id).remaining, 1000000);
   assert.equal(houseInAugust.memberTargets.find((member) => member.id === partner.id).remaining, 5000000);
+  await request(app).delete(`/api/fund/contributions/${houseContributionId}`)
+    .set(ownerAuth)
+    .expect(204);
+  const afterContributionDelete = await request(app).get('/api/fund?month=2026-08').set(ownerAuth).expect(200);
+  const houseAfterDelete = afterContributionDelete.body.pockets.find((pocket) => pocket.id === housePocket.body.pocket.id);
+  assert.equal(houseAfterDelete.monthlyContributed, 0);
+  assert.equal(houseAfterDelete.monthlyRemaining, 10000000);
   const septemberTracking = await request(app).get('/api/fund?month=2026-09').set(ownerAuth).expect(200);
   const houseInSeptember = septemberTracking.body.pockets.find((pocket) => pocket.id === housePocket.body.pocket.id);
   assert.equal(houseInSeptember.monthlyContributed, 0);
@@ -585,6 +673,65 @@ test('monthly spending plans are shared and track actual expenses', async () => 
   assert.equal(emptyPlan.body.spent, 0);
   assert.ok(emptyPlan.body.items.length > 0);
   assert.equal(emptyPlan.body.items.find((item) => item.category.id === food.id).id, null);
+});
+
+test('deleting every spending plan clears linked fund payment pockets', async () => {
+  const ownerRegistration = await request(app).post('/api/auth/register').send({
+    displayName: 'Người lập kế hoạch', email: 'clear-fund-owner@example.com',
+    password: 'ClearFund123!', mode: 'create', familyName: 'Gia đình dọn quỹ',
+  }).expect(201);
+  const verificationToken = new URL(ownerRegistration.body.previewVerificationUrl).searchParams.get('token');
+  await request(app).post('/api/auth/verify-email').send({ token: verificationToken }).expect(200);
+  const login = await request(app).post('/api/auth/login').send({
+    email: 'clear-fund-owner@example.com', password: 'ClearFund123!',
+  }).expect(200);
+  const auth = { Authorization: `Bearer ${login.body.accessToken}` };
+  const categories = await request(app).get('/api/categories').set(auth).expect(200);
+  const food = categories.body.find((category) => category.name === 'Ăn uống' && category.type === 'expense');
+
+  await request(app).post('/api/budgets').set(auth).send({
+    month: '2026-08', categoryId: food.id, amount: 200000,
+  }).expect(201);
+  let fund = await request(app).get('/api/fund?month=2026-08').set(auth).expect(200);
+  const foodPocket = fund.body.pockets.find((pocket) => pocket.category?.id === food.id);
+  assert.equal(foodPocket.monthlyTarget, 200000);
+
+  await request(app).post('/api/fund/contributions').set(auth).send({
+    contributionDate: '2026-08-20', pocketId: foodPocket.id,
+    contributions: [{ userId: login.body.user.id, amount: 200000 }],
+  }).expect(201);
+
+  await request(app).post('/api/budgets/batch').set(auth).send({
+    month: '2026-08', scope: 'month', items: [{ categoryId: food.id, amount: 0 }],
+  }).expect(200);
+  fund = await request(app).get('/api/fund?month=2026-08').set(auth).expect(200);
+  assert.equal(fund.body.pockets.some((pocket) => pocket.id === foodPocket.id), false);
+  assert.equal(fund.body.balance, 0);
+  assert.equal(fund.body.recentContributions.some((batch) => batch.total === 200000), true);
+
+  await request(app).post('/api/budgets/batch').set(auth).send({
+    month: '2026-08', scope: 'month', items: [{ categoryId: food.id, amount: 300000 }],
+  }).expect(200);
+  fund = await request(app).get('/api/fund?month=2026-08').set(auth).expect(200);
+  const restoredPocket = fund.body.pockets.find((pocket) => pocket.category?.id === food.id);
+  assert.equal(restoredPocket.id, foodPocket.id);
+  assert.equal(restoredPocket.monthlyTarget, 300000);
+
+  const transport = categories.body.find((category) => category.name === 'Giao thông' && category.type === 'expense');
+  await request(app).post('/api/budgets').set(auth).send({
+    month: '2026-08', categoryId: transport.id, amount: 150000,
+  }).expect(201);
+  const directPlan = await request(app).get('/api/budgets?month=2026-08').set(auth).expect(200);
+  await request(app).delete(`/api/budgets/${directPlan.body.items.find((item) => item.category.id === transport.id).id}`).set(auth).expect(204);
+  fund = await request(app).get('/api/fund?month=2026-08').set(auth).expect(200);
+  assert.equal(fund.body.pockets.some((pocket) => pocket.category?.id === transport.id), false);
+
+  const clearResult = await request(app).post('/api/budgets/clear-all').set(auth).expect(200);
+  assert.match(clearResult.body.message, /toàn bộ kế hoạch/i);
+  const clearedPlan = await request(app).get('/api/budgets?month=2026-08').set(auth).expect(200);
+  assert.equal(clearedPlan.body.planned, 0);
+  fund = await request(app).get('/api/fund?month=2026-08').set(auth).expect(200);
+  assert.equal(fund.body.pockets.some((pocket) => pocket.category?.id === food.id), false);
 });
 
 test('budget save scopes support recurring plans and monthly overrides', async () => {
@@ -701,3 +848,254 @@ test('password reset invalidates the old password', async () => {
     .send({ email: 'owner@example.com', password: 'NewMoneyMate123!' })
     .expect(200);
 });
+
+test('shopping list estimates prices and applies budget changes idempotently', async () => {
+  const login = await request(app)
+    .post('/api/auth/login')
+    .send({ email: 'owner@example.com', password: 'NewMoneyMate123!' })
+    .expect(200);
+  const auth = { Authorization: `Bearer ${login.body.accessToken}` };
+  await request(app).patch(`/api/spaces/${login.body.family.id}/gemini`).set(auth).send({
+    apiKey: 'GEMINI_API_KEY="AIzaSyTestPerSpaceGeminiKey123456"',
+  }).expect(200);
+  const geminiStatus = await request(app).get(`/api/spaces/${login.body.family.id}/gemini`).set(auth).expect(200);
+  assert.equal(geminiStatus.body.configured, true);
+  assert.equal(geminiStatus.body.maskedKey, 'AIzaSy******3456');
+  const category = await request(app).post('/api/categories').set(auth).send({
+    name: 'Đồ mua thử', type: 'expense', icon: 'ShoppingBag', color: '#4A8F8B',
+  }).expect(201);
+    const categoryId = category.body.id;
+
+    await request(app).post('/api/shopping').set(auth).send({
+      month: '2027-08', name: 'Thiếu danh mục', quantity: 1, plannedUnitPrice: 100000,
+    }).expect(422);
+
+  const originalFetch = global.fetch;
+  let fetchCount = 0;
+  global.fetch = async (url, options) => {
+    fetchCount += 1;
+    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent');
+    assert.equal(options.headers['x-goog-api-key'], 'AIzaSyTestPerSpaceGeminiKey123456');
+    const requestBody = JSON.parse(options.body);
+    assert.match(requestBody.contents[0].parts[0].text, /Việt Nam/);
+    return {
+      ok: true,
+      async json() {
+        return {
+          candidates: [{
+            content: { parts: [{ text: JSON.stringify({
+              normalizedName: 'Tai nghe thử', priceLow: 120000, priceHigh: 220000,
+              recommendedPrice: 180000, total: 360000, categoryName: 'Đồ mua thử', unit: 'cái',
+              confidence: 'high', notes: 'Giá tham khảo.',
+            }) }] },
+            groundingMetadata: { groundingChunks: [{ web: { uri: 'https://shop.example.test/headphones', title: 'Nguồn thử' } }] },
+          }],
+        };
+      },
+    };
+  };
+  try {
+    const estimate = await request(app).post('/api/shopping/estimate').set(auth).send({
+      query: 'tai nghe', quantity: 2, unit: 'cái',
+    }).expect(200);
+    assert.equal(estimate.body.total, 360000);
+    assert.equal(estimate.body.unit, 'cái');
+    assert.deepEqual(estimate.body.sources, []);
+    assert.match(estimate.body.notes, /ước lượng AI/i);
+    await request(app).post('/api/shopping/estimate').set(auth).send({ query: 'tai nghe', quantity: 2, unit: 'cái' }).expect(200);
+    assert.equal(fetchCount, 1);
+
+    const budgetResponse = await request(app).post('/api/budgets').set(auth).send({
+      month: '2027-08', categoryId, amount: 1000000,
+    });
+    assert.equal(budgetResponse.status, 201);
+    const created = await request(app).post('/api/shopping').set(auth).send({
+      month: '2027-08', name: 'Tai nghe thử', quantity: 2, unit: 'cái',
+      plannedUnitPrice: 180000, plannedTotal: 360000, categoryId,
+    }).expect(201);
+    const itemId = created.body.item.id;
+    assert.equal(created.body.item.plannedTotal, 360000);
+
+    await request(app).post('/api/shopping/apply-budget').set(auth).send({ itemId, categoryId }).expect(200);
+    await request(app).post('/api/shopping/apply-budget').set(auth).send({ itemId, categoryId }).expect(200);
+    let plan = await request(app).get('/api/budgets?month=2027-08').set(auth).expect(200);
+    assert.equal(plan.body.items.find((item) => item.category.id === categoryId).amount, 1360000);
+    assert.deepEqual(plan.body.items.find((item) => item.category.id === categoryId).shoppingItems.map((item) => item.name), ['Tai nghe thử']);
+
+    await request(app).patch(`/api/shopping/${itemId}`).set(auth).send({
+      month: '2027-08', name: 'Tai nghe thử', quantity: 2, unit: 'cái',
+      plannedUnitPrice: 200000, plannedTotal: 400000, categoryId,
+    }).expect(200);
+    plan = await request(app).get('/api/budgets?month=2027-08').set(auth).expect(200);
+    assert.equal(plan.body.items.find((item) => item.category.id === categoryId).amount, 1400000);
+    assert.equal(plan.body.items.find((item) => item.category.id === categoryId).shoppingItems[0].total, 400000);
+
+    await request(app).delete(`/api/shopping/${itemId}`).set(auth).expect(204);
+    plan = await request(app).get('/api/budgets?month=2027-08').set(auth).expect(200);
+    assert.equal(plan.body.items.find((item) => item.category.id === categoryId).amount, 1000000);
+    assert.deepEqual(plan.body.items.find((item) => item.category.id === categoryId).shoppingItems, []);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('shopping estimate works without grounded sources', async () => {
+  const login = await request(app)
+    .post('/api/auth/login')
+    .send({ email: 'owner@example.com', password: 'NewMoneyMate123!' })
+    .expect(200);
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    async json() {
+      return { candidates: [{ content: { parts: [{ text: '{"normalizedName":"Món thử","unit":"gói","priceLow":1,"priceHigh":2,"recommendedPrice":1,"total":1,"categoryName":"","confidence":"low","notes":""}' }] } }] };
+    },
+  });
+  try {
+    const estimate = await request(app).post('/api/shopping/estimate')
+      .set({ Authorization: `Bearer ${login.body.accessToken}` })
+      .send({ query: 'món thử', quantity: 1 })
+      .expect(200);
+    assert.deepEqual(estimate.body.sources, []);
+    assert.equal(estimate.body.unit, 'gói');
+    assert.match(estimate.body.notes, /ước lượng AI/i);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('shopping estimate falls back to another flash model when the primary is unavailable', async () => {
+  const login = await request(app)
+    .post('/api/auth/login')
+    .send({ email: 'owner@example.com', password: 'NewMoneyMate123!' })
+    .expect(200);
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url) => {
+    calls.push(url);
+    if (url.includes('/gemini-3.5-flash-lite:')) {
+      return {
+        ok: true,
+        async json() {
+          return {
+            candidates: [{ content: { parts: [{ text: '{"normalizedName":"Nồi cơm","priceLow":500000,"priceHigh":1500000,"recommendedPrice":900000,"total":900000,"categoryName":"Nhà cửa","confidence":"medium","notes":""}' }] } }],
+          };
+        },
+      };
+    }
+    return { ok: false, status: 503, async text() { return '{"error":{"status":"UNAVAILABLE"}}'; } };
+  };
+  try {
+    const estimate = await request(app).post('/api/shopping/estimate')
+      .set({ Authorization: `Bearer ${login.body.accessToken}` })
+      .send({ query: 'nồi cơm fallback', quantity: 1 })
+      .expect(200);
+    assert.equal(estimate.body.recommendedPrice, 900000);
+    assert.equal(calls.length, 3);
+    assert.match(calls[0], /gemini-3\.5-flash/);
+    assert.match(calls.at(-1), /gemini-3\.5-flash-lite/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('monthly income plans track planned and received amounts and support batch updates', async () => {
+  const login = await request(app)
+    .post('/api/auth/login')
+    .send({ email: 'owner@example.com', password: 'NewMoneyMate123!' })
+    .expect(200);
+  const auth = { Authorization: `Bearer ${login.body.accessToken}` };
+  const categories = await request(app).get('/api/categories').set(auth).expect(200);
+  const salary = categories.body.find((category) => category.name === 'Lương' && category.type === 'income');
+  const bonus = categories.body.find((category) => category.name === 'Thưởng' && category.type === 'income');
+  assert.ok(salary);
+  assert.ok(bonus);
+
+  // Record an income transaction
+  await request(app).post('/api/transactions').set(auth).send({
+    type: 'income', amount: 15000000, categoryId: salary.id,
+    transactionDate: '2026-09-05', note: 'Lương tháng 9',
+  }).expect(201);
+
+  // Initially, income plan has 0 planned, so total spent/received is 15000000 from the recorded income transaction
+  const initialPlan = await request(app).get('/api/budgets?month=2026-09&type=income').set(auth).expect(200);
+  assert.equal(initialPlan.body.type, 'income');
+  assert.equal(initialPlan.body.planned, 0);
+  assert.equal(initialPlan.body.spent, 15000000);
+  const salaryRow = initialPlan.body.items.find((item) => item.category.id === salary.id);
+  assert.equal(salaryRow.amount, 0);
+  assert.equal(salaryRow.spent, 15000000);
+
+  // Set salary income budget
+  const created = await request(app).post('/api/budgets').set(auth).send({
+    month: '2026-09', categoryId: salary.id, amount: 20000000,
+  }).expect(201);
+  assert.equal(created.body.message, 'Đã lưu kế hoạch thu nhập.');
+
+  const planAfterSalary = await request(app).get('/api/budgets?month=2026-09&type=income').set(auth).expect(200);
+  assert.equal(planAfterSalary.body.planned, 20000000);
+  assert.equal(planAfterSalary.body.spent, 15000000);
+  assert.equal(planAfterSalary.body.remaining, 5000000);
+
+  // Record income for bonus (currently unbudgeted)
+  await request(app).post('/api/transactions').set(auth).send({
+    type: 'income', amount: 5000000, categoryId: bonus.id,
+    transactionDate: '2026-09-10', note: 'Thưởng quý',
+  }).expect(201);
+
+  // Total received should now be 20000000 even though bonus is not yet planned
+  const planAfterBonus = await request(app).get('/api/budgets?month=2026-09&type=income').set(auth).expect(200);
+  assert.equal(planAfterBonus.body.planned, 20000000);
+  assert.equal(planAfterBonus.body.spent, 20000000);
+
+  // Batch save income plan with future scope
+  const batchResult = await request(app).post('/api/budgets/batch').set(auth).send({
+    month: '2026-09',
+    scope: 'future',
+    type: 'income',
+    items: [
+      { categoryId: salary.id, amount: 25000000 },
+      { categoryId: bonus.id, amount: 5000000 },
+    ],
+  }).expect(200);
+  assert.equal(batchResult.body.message, 'Đã áp dụng kế hoạch thu nhập cho tháng này và các tháng sau.');
+
+  // Check updated plan for 2026-09
+  const updatedSeptember = await request(app).get('/api/budgets?month=2026-09&type=income').set(auth).expect(200);
+  assert.equal(updatedSeptember.body.planned, 30000000);
+  assert.equal(updatedSeptember.body.spent, 20000000);
+
+  // Check next month (2026-10) has inherited future rule
+  const octoberPlan = await request(app).get('/api/budgets?month=2026-10&type=income').set(auth).expect(200);
+  assert.equal(octoberPlan.body.planned, 30000000);
+
+  // Overriding a single month (2026-10) with month scope
+  await request(app).post('/api/budgets/batch').set(auth).send({
+    month: '2026-10',
+    scope: 'month',
+    type: 'income',
+    items: [
+      { categoryId: bonus.id, amount: 10000000 },
+    ],
+  }).expect(200);
+
+  const updatedOctober = await request(app).get('/api/budgets?month=2026-10&type=income').set(auth).expect(200);
+  const octoberBonus = updatedOctober.body.items.find((item) => item.category.id === bonus.id);
+  assert.equal(octoberBonus.amount, 10000000);
+  // Month 2026-11 still has original future rule (5000000)
+  const novemberPlan = await request(app).get('/api/budgets?month=2026-11&type=income').set(auth).expect(200);
+  const novemberBonus = novemberPlan.body.items.find((item) => item.category.id === bonus.id);
+  assert.equal(novemberBonus.amount, 5000000);
+
+  // Verify expense budgets were NOT mixed into income plans
+  const expensePlan = await request(app).get('/api/budgets?month=2026-09').set(auth).expect(200);
+  assert.ok(expensePlan.body.items.every((item) => categories.body.find((c) => c.id === item.category.id)?.type === 'expense'));
+
+  // Verify created family spaces have all default plan flags enabled
+  const spaces = await request(app).get('/api/spaces').set(auth).expect(200);
+  const currentSpace = spaces.body.spaces.find((s) => s.type === 'family');
+  assert.ok(currentSpace);
+  assert.equal(currentSpace.showSpendingPlan, true);
+  assert.equal(currentSpace.showIncomePlan, true);
+});
+
