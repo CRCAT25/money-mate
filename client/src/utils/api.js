@@ -41,6 +41,15 @@ api.interceptors.response.use(
     const refreshToken = sessionStorage.getRefresh();
     if (!refreshToken) throw error;
 
+    // If another concurrent request already refreshed the access token, retry immediately
+    const currentAccess = sessionStorage.getAccess();
+    const sentAccess = original.headers?.Authorization?.replace(/^Bearer\s+/i, '');
+    if (currentAccess && sentAccess && currentAccess !== sentAccess) {
+      original._retry = true;
+      original.headers.Authorization = `Bearer ${currentAccess}`;
+      return api(original);
+    }
+
     original._retry = true;
     refreshPromise ||= axios
       .post(`${api.defaults.baseURL}/auth/refresh`, { refreshToken })
@@ -57,8 +66,12 @@ api.interceptors.response.use(
       original.headers.Authorization = `Bearer ${token}`;
       return api(original);
     } catch (refreshError) {
-      sessionStorage.clear();
-      window.dispatchEvent(new Event('moneymate:session-expired'));
+      // Only clear credentials if the refresh token was explicitly rejected by the server (401 or 403).
+      // If refresh failed due to network loss, cold-start timeout, etc., keep tokens intact so the user isn't logged out.
+      if (refreshError.response?.status === 401 || refreshError.response?.status === 403) {
+        sessionStorage.clear();
+        window.dispatchEvent(new Event('moneymate:session-expired'));
+      }
       throw refreshError;
     }
   },

@@ -44,10 +44,11 @@ async function sessionPayload(db, user, preferredType) {
 async function createSession(db, user) {
   const refreshId = id();
   const refreshToken = signRefreshToken(user, refreshId);
+  const refreshDays = Number(String(config.refreshTtl || '').replace(/\D/g, '')) || 30;
   await db.prepare(`
     INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at)
     VALUES (?, ?, ?, ?)
-  `).run(refreshId, user.id, hashToken(refreshToken), addDays(new Date(), 7).toISOString());
+  `).run(refreshId, user.id, hashToken(refreshToken), addDays(new Date(), refreshDays).toISOString());
   return { accessToken: signAccessToken(user), refreshToken };
 }
 

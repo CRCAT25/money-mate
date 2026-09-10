@@ -1,16 +1,55 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import api, { setApiSpace } from '../utils/api.js';
 import { disablePushNotifications } from '../utils/pushNotifications.js';
-import { sessionStorage, spaceStorage } from '../utils/storage.js';
+import { sessionStorage, spaceStorage, userStorage } from '../utils/storage.js';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [family, setFamily] = useState(null);
-  const [spaces, setSpaces] = useState([]);
-  const [activeSpaceId, setActiveSpaceIdState] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUserState] = useState(() => {
+    const hasTokens = Boolean(sessionStorage.getAccess() || sessionStorage.getRefresh());
+    return hasTokens ? userStorage.get() : null;
+  });
+  const [spaces, setSpaces] = useState(() => {
+    const hasTokens = Boolean(sessionStorage.getAccess() || sessionStorage.getRefresh());
+    return hasTokens ? userStorage.getSpaces() : [];
+  });
+  const [activeSpaceId, setActiveSpaceIdState] = useState(() => {
+    const hasTokens = Boolean(sessionStorage.getAccess() || sessionStorage.getRefresh());
+    if (!hasTokens) return null;
+    const cachedUser = userStorage.get();
+    const cachedSpaces = userStorage.getSpaces();
+    if (!cachedUser) return null;
+    const selectedId = spaceStorage.get(cachedUser.id);
+    const space = cachedSpaces.find((s) => s.id === selectedId) || cachedSpaces[0];
+    return space?.id || null;
+  });
+  const [family, setFamily] = useState(() => {
+    const hasTokens = Boolean(sessionStorage.getAccess() || sessionStorage.getRefresh());
+    if (!hasTokens) return null;
+    const cachedUser = userStorage.get();
+    const cachedSpaces = userStorage.getSpaces();
+    if (!cachedUser) return null;
+    const selectedId = spaceStorage.get(cachedUser.id);
+    const space = cachedSpaces.find((s) => s.id === selectedId) || cachedSpaces[0];
+    if (space?.id) {
+      setApiSpace(space.id);
+    }
+    return space || null;
+  });
+  const [loading, setLoading] = useState(() => {
+    const hasTokens = Boolean(sessionStorage.getAccess() || sessionStorage.getRefresh());
+    if (!hasTokens) return false;
+    return !userStorage.get();
+  });
+
+  const setUser = useCallback((nextUser) => {
+    setUserState((prev) => {
+      const resolved = typeof nextUser === 'function' ? nextUser(prev) : nextUser;
+      userStorage.set(resolved);
+      return resolved;
+    });
+  }, []);
 
   const loadProfile = useCallback(async () => {
     if (!sessionStorage.getAccess() && !sessionStorage.getRefresh()) {
@@ -21,6 +60,7 @@ export function AuthProvider({ children }) {
       const { data } = await api.get('/auth/me');
       setUser(data.user);
       setSpaces(data.spaces || []);
+      userStorage.setSpaces(data.spaces || []);
       const requestedSpaceId = consumeNotificationSpace();
       const selectedId = requestedSpaceId || spaceStorage.get(data.user.id);
       const nextSpace = data.spaces?.find((space) => space.id === selectedId)
@@ -31,23 +71,26 @@ export function AuthProvider({ children }) {
       if (nextSpace) spaceStorage.set(data.user.id, nextSpace.id);
       setApiSpace(nextSpace?.id);
       setFamily(nextSpace);
-    } catch {
-      sessionStorage.clear();
-      setUser(null);
-      setFamily(null);
-      setSpaces([]);
-      setActiveSpaceIdState(null);
-      setApiSpace(null);
+    } catch (error) {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        sessionStorage.clear();
+        setUserState(null);
+        setFamily(null);
+        setSpaces([]);
+        setActiveSpaceIdState(null);
+        setApiSpace(null);
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setUser]);
 
   useEffect(() => {
     loadProfile();
     const expire = () => {
       void disablePushNotifications({ notifyServer: false });
-      setUser(null);
+      sessionStorage.clear();
+      setUserState(null);
       setFamily(null);
       setSpaces([]);
       setActiveSpaceIdState(null);
@@ -62,6 +105,7 @@ export function AuthProvider({ children }) {
     sessionStorage.set(data);
     setUser(data.user);
     setSpaces(data.spaces || []);
+    userStorage.setSpaces(data.spaces || []);
     const requestedSpaceId = consumeNotificationSpace();
     const selectedId = requestedSpaceId || spaceStorage.get(data.user.id);
     const nextSpace = data.spaces?.find((space) => space.id === selectedId)
@@ -73,7 +117,7 @@ export function AuthProvider({ children }) {
     setApiSpace(nextSpace?.id);
     setFamily(nextSpace);
     return data;
-  }, []);
+  }, [setUser]);
 
   const logout = useCallback(async () => {
     const refreshToken = sessionStorage.getRefresh();
@@ -88,7 +132,7 @@ export function AuthProvider({ children }) {
       // Local logout still succeeds if the server is unavailable.
     }
     sessionStorage.clear();
-    setUser(null);
+    setUserState(null);
     setFamily(null);
     setSpaces([]);
     setActiveSpaceIdState(null);
@@ -106,7 +150,7 @@ export function AuthProvider({ children }) {
 
   const value = useMemo(
     () => ({ user, family, spaces, activeSpaceId, loading, login, logout, refreshProfile: loadProfile, selectSpace, setFamily, setUser }),
-    [user, family, spaces, activeSpaceId, loading, login, logout, loadProfile, selectSpace],
+    [user, family, spaces, activeSpaceId, loading, login, logout, loadProfile, selectSpace, setUser],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
