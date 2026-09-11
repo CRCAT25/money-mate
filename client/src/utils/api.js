@@ -20,11 +20,44 @@ api.interceptors.request.use((request) => {
   return request;
 });
 
+const inFlightGetRequests = new Map();
+
+function getRequestKey(url, config = {}) {
+  const space = activeSpaceId || '';
+  const params = config.params ? JSON.stringify(config.params) : '';
+  return `${space}:${url}:${params}`;
+}
+
+const originalGet = api.get.bind(api);
+
+api.get = function deduplicatedGet(url, config) {
+  if (config?.skipDeduplication) {
+    return originalGet(url, config);
+  }
+
+  const key = getRequestKey(url, config);
+  const pending = inFlightGetRequests.get(key);
+  if (pending) {
+    return pending;
+  }
+
+  const request = originalGet(url, config).finally(() => {
+    if (inFlightGetRequests.get(key) === request) {
+      inFlightGetRequests.delete(key);
+    }
+  });
+
+  inFlightGetRequests.set(key, request);
+  return request;
+};
+
 let refreshPromise;
 
 function announceApiActivity(config) {
+  const method = (config?.method || 'get').toLowerCase();
+  if (method === 'get') return;
   const url = config?.url || '';
-  if (url.includes('/family/sync') || url.includes('/spaces/') || url.includes('/auth/')) return;
+  if (url.includes('/sync') || url.includes('/spaces/') || url.includes('/auth/')) return;
   window.dispatchEvent(new Event('moneymate:api-activity'));
 }
 

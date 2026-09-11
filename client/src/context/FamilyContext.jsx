@@ -57,28 +57,33 @@ export function FamilyProvider({ children }) {
     setLoading(false);
   }, [user, activeSpaceId, clearPageCache]);
 
-  const checkForChanges = useCallback(async () => {
-    if (!user) return;
+  const lastCheckTime = useRef(0);
+
+  const checkForChanges = useCallback(async (force = false) => {
+    if (!user || !activeSpaceId) return;
+    const now = Date.now();
+    if (!force && now - lastCheckTime.current < 20000) return;
     if (syncRequest.current) return syncRequest.current;
 
-    const request = api.get(`/spaces/${activeSpaceId}`).then(async ({ data }) => {
-      data = data.revisions;
+    lastCheckTime.current = now;
+    const request = api.get(`/spaces/${activeSpaceId}/sync`).then(async ({ data }) => {
+      const revisions = data.revisions || data;
       const previous = syncState.current;
-      syncState.current = data;
+      syncState.current = revisions;
       if (!previous) return;
 
-      const baseDelta = Math.max(0, data.baseRevision - previous.baseRevision);
+      const baseDelta = Math.max(0, revisions.baseRevision - previous.baseRevision);
       const localBaseChanges = Math.min(baseDelta, pendingLocalBaseChanges.current);
       pendingLocalBaseChanges.current -= localBaseChanges;
       const baseChanged = baseDelta > localBaseChanges;
-      const transactionDelta = Math.max(0, data.transactionsRevision - previous.transactionsRevision);
+      const transactionDelta = Math.max(0, revisions.transactionsRevision - previous.transactionsRevision);
       const localTransactions = Math.min(transactionDelta, pendingLocalTransactions.current);
       pendingLocalTransactions.current -= localTransactions;
       const transactionsChanged = transactionDelta > localTransactions;
       if (transactionsChanged && !baseChanged) invalidatePageCache();
       if (baseChanged) await reloadBaseData();
       if (baseChanged || transactionsChanged) bumpRevision();
-    }).finally(() => {
+    }).catch(() => {}).finally(() => {
       syncRequest.current = null;
     });
     syncRequest.current = request;
@@ -111,7 +116,7 @@ export function FamilyProvider({ children }) {
 
   useEffect(() => {
     if (!user || !syncState.current) return;
-    checkForChanges().catch(() => {});
+    checkForChanges(false).catch(() => {});
   }, [pathname, user, checkForChanges]);
 
   useEffect(() => {
@@ -120,7 +125,7 @@ export function FamilyProvider({ children }) {
     const handleApiActivity = () => {
       window.clearTimeout(timeout);
       timeout = window.setTimeout(() => {
-        if (syncState.current) checkForChanges().catch(() => {});
+        if (syncState.current) checkForChanges(true).catch(() => {});
       }, 120);
     };
     window.addEventListener('moneymate:api-activity', handleApiActivity);
@@ -137,7 +142,7 @@ export function FamilyProvider({ children }) {
       ? configuredSocketUrl
       : (import.meta.env.DEV && window.location.hostname === 'localhost' ? 'http://localhost:4000' : null);
     const syncChanged = (payload) => {
-      if (!payload?.spaceId || payload.spaceId === activeSpaceId) checkForChanges().catch(() => {});
+      if (!payload?.spaceId || payload.spaceId === activeSpaceId) checkForChanges(true).catch(() => {});
     };
     if (socketUrl) {
       const socket = io(socketUrl, { auth: { token: sessionStorage.getAccess() } });
@@ -159,7 +164,7 @@ export function FamilyProvider({ children }) {
       const payload = event.detail;
       notify(payload.body || 'Gia đình vừa có khoản chi mới.');
       if (payload?.spaceId !== activeSpaceId) return;
-      checkForChanges().catch(() => {});
+      checkForChanges(true).catch(() => {});
     };
     window.addEventListener('moneymate:push', handlePush);
     return () => window.removeEventListener('moneymate:push', handlePush);
@@ -206,54 +211,64 @@ export function FamilyProvider({ children }) {
     });
   }, [activeSpace?.type, loadCache]);
 
-  const prefetchPages = useCallback((months) => {
-    const requestedMonths = [...new Set((Array.isArray(months) ? months : [months]).filter((month) => /^\d{4}-\d{2}$/.test(month)))];
-    return new Promise((resolve) => {
-      const run = () => {
-        const requests = requestedMonths.flatMap((month) => {
-          const homeRequest = loadCache(`home:${month}`, async () => {
-            const [summaryResponse, transactionResponse, fundEntry] = await Promise.all([
-              api.get('/reports/summary', { params: { month } }),
-              api.get('/transactions', { params: { month, limit: 200 } }),
-              loadFund(month),
-            ]);
-            return { summary: summaryResponse.data, transactions: transactionResponse.data, fund: fundEntry?.data || null };
-          });
-          const plansRequest = loadCache(`plans:${month}`, async () => {
-            const { data } = await api.get('/budgets', { params: { month } });
-            return { data };
-          });
-          const incomePlansRequest = loadCache(`plans:income:${month}`, async () => {
-            const { data } = await api.get('/budgets', { params: { month, type: 'income' } });
-            return { data };
-          });
-          const shoppingRequest = loadCache(`shopping:${month}`, async () => {
-            const { data } = await api.get('/shopping', { params: { month } });
-            return { data };
-          });
-          const reportsRequest = loadCache(`reports:${month}::`, async () => {
-            const [homeData, trendResponse] = await Promise.all([
-              homeRequest,
-              api.get('/reports/trend', { params: { endMonth: month, months: 6 } }),
-            ]);
-            return {
-              data: {
-                summary: homeData.summary,
-                trend: trendResponse.data,
-                transactions: homeData.transactions,
-              },
-            };
-          });
-          return [homeRequest, plansRequest, incomePlansRequest, shoppingRequest, reportsRequest];
-        });
-        Promise.allSettled(requests).then(resolve);
-      };
+  const prefetchQueue = useRef([]);
+  const prefetchRunning = useRef(false);
 
-      // Keep background warming from competing with the page the user just opened.
-      if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 900 });
-      else window.setTimeout(run, 350);
-    });
-  }, [loadCache, loadFund]);
+  const processPrefetchQueue = useCallback(() => {
+    if (prefetchRunning.current || prefetchQueue.current.length === 0) return;
+    prefetchRunning.current = true;
+
+    const task = prefetchQueue.current.shift();
+    if (!task) {
+      prefetchRunning.current = false;
+      return;
+    }
+
+    Promise.resolve()
+      .then(task)
+      .catch(() => {})
+      .finally(() => {
+        prefetchRunning.current = false;
+        if (prefetchQueue.current.length > 0) {
+          if ('requestIdleCallback' in window) {
+            window.requestIdleCallback(() => processPrefetchQueue(), { timeout: 1500 });
+          } else {
+            window.setTimeout(() => processPrefetchQueue(), 250);
+          }
+        }
+      });
+  }, []);
+
+  const prefetchPages = useCallback((months) => {
+    const rawList = Array.isArray(months) ? months : [months];
+    const requestedMonths = [...new Set(rawList.filter((m) => /^\d{4}-\d{2}$/.test(m)))].slice(0, 1);
+    if (requestedMonths.length === 0) return Promise.resolve();
+
+    const month = requestedMonths[0];
+    const tasks = [
+      () => loadCache(`plans:${month}`, async () => {
+        const { data } = await api.get('/budgets', { params: { month } });
+        return { data };
+      }),
+      () => loadCache(`plans:income:${month}`, async () => {
+        const { data } = await api.get('/budgets', { params: { month, type: 'income' } });
+        return { data };
+      }),
+    ];
+
+    prefetchQueue.current = tasks;
+
+    const schedule = () => {
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(() => processPrefetchQueue(), { timeout: 1200 });
+      } else {
+        window.setTimeout(() => processPrefetchQueue(), 400);
+      }
+    };
+
+    schedule();
+    return Promise.resolve();
+  }, [loadCache, processPrefetchQueue]);
 
   const touch = useCallback((kind = 'transactions') => {
     if (kind === 'base') pendingLocalBaseChanges.current += 1;

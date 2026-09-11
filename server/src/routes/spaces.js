@@ -72,6 +72,16 @@ router.get('/', async (req, res) => {
   });
 });
 
+router.get('/:spaceId/sync', [param('spaceId').isUUID()], validate, async (req, res) => {
+  const db = getDb();
+  const space = await getAccessibleSpace(db, req.user.id, req.params.spaceId);
+  if (!space) return res.status(404).json({ message: 'Không tìm thấy không gian.' });
+  res.json({
+    spaceId: space.id,
+    revisions: space.revisions,
+  });
+});
+
 router.get('/:spaceId', [param('spaceId').isUUID()], validate, async (req, res) => {
   const db = getDb();
   const space = await getAccessibleSpace(db, req.user.id, req.params.spaceId);
