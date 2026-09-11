@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarDays, Landmark, Pencil, Trash2, X } from 'lucide-react';
+import { CalendarDays, ChevronDown, Landmark, Pencil, Trash2, X } from 'lucide-react';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import Skeleton, { TransactionListSkeleton } from '../components/ui/Skeleton.jsx';
 import TransactionList from '../components/TransactionList.jsx';
@@ -191,7 +191,7 @@ export default function Home() {
       </section>
 
       {!isPersonal && contentView === 'fund' ? (
-        <div key="fund" className="animate-fade-only"><FundCard fund={fund} currency={family.currency} loading={loading} contributions={displayedContributions} transactions={displayedFundTransactions} filtered={selectedDates.length > 0} groupTransactionsByDate={selectedDates.length !== 1} onEditContribution={openContributionEditor} onDeleteContribution={setDeleteContributionTarget} onDeleteTransaction={setDeleteTarget} /></div>
+        <div key="fund" className="animate-fade-only"><FundCard fund={fund} currency={family.currency} loading={loading} contributions={displayedContributions} transactions={displayedFundTransactions} filtered={selectedDates.length > 0} selectedDateLabel={selectedDateLabel} onClearFilter={() => setSelectedDates([])} groupTransactionsByDate={selectedDates.length !== 1} onEditContribution={openContributionEditor} onDeleteContribution={setDeleteContributionTarget} onDeleteTransaction={setDeleteTarget} /></div>
       ) : (
         <section key="transactions" className="animate-fade-only overflow-hidden rounded-[18px] border border-ink/[0.06] bg-paper/90 p-3.5 shadow-card sm:p-5">
           <div className="mb-2 flex items-center justify-between gap-2">
@@ -238,7 +238,24 @@ function HomeContentTabs({ value, onChange }) {
   );
 }
 
-function FundCard({ fund, currency, loading, contributions, transactions, filtered, groupTransactionsByDate, onEditContribution, onDeleteContribution, onDeleteTransaction }) {
+function FundCard({
+  fund,
+  currency,
+  loading,
+  contributions,
+  transactions,
+  filtered,
+  selectedDateLabel,
+  onClearFilter,
+  groupTransactionsByDate,
+  onEditContribution,
+  onDeleteContribution,
+  onDeleteTransaction,
+}) {
+  const [fundPlanExpanded, setFundPlanExpanded] = useState(false);
+  const [contributionsExpanded, setContributionsExpanded] = useState(false);
+  const [expensesExpanded, setExpensesExpanded] = useState(true);
+
   const pockets = visibleFundPockets(fund?.pockets);
   const plannedPockets = pockets.filter((pocket) => Number(pocket.monthlyTarget || 0) > 0);
   const fundPockets = pockets.filter((pocket) => Number(pocket.monthlyContributed || 0) > 0);
@@ -247,108 +264,255 @@ function FundCard({ fund, currency, loading, contributions, transactions, filter
   const monthlyRemaining = plannedPockets.reduce((sum, pocket) => sum + Number(pocket.monthlyRemaining || 0), 0);
   const monthlyPercentage = monthlyTarget > 0 ? Math.min(100, (monthlyContributed / monthlyTarget) * 100) : 0;
 
+  const totalContributionsAmount = useMemo(
+    () => contributions.reduce((sum, c) => sum + Number(c.amount || 0), 0),
+    [contributions],
+  );
+  const totalExpensesAmount = useMemo(
+    () => transactions.reduce((sum, t) => sum + Number(t.amount || 0), 0),
+    [transactions],
+  );
+
   return (
-    <section className="overflow-hidden rounded-[16px] border border-ink/[0.06] bg-[linear-gradient(135deg,rgba(230,242,237,0.92),rgba(255,250,240,0.88))] p-3.5 shadow-card sm:p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="grid size-8 place-items-center rounded-[10px] bg-white/75 text-forest shadow-sm"><Landmark className="size-4" /></span>
-          <div>
-            <h2 className="text-[13px] font-medium text-ink sm:text-sm">Quỹ chung</h2>
-            <p className="text-[10px] font-normal text-ink/42">Theo dõi kế hoạch nạp quỹ tháng này</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-3 rounded-[11px] border border-white/70 bg-white/42 px-2.5 py-2">
-        <div className="flex items-center justify-between gap-3 text-[9px] font-normal text-ink/42">
-          <span>Tiến độ nạp quỹ</span>
-          <span>{loading ? '...' : `Mục tiêu ${formatMoney(monthlyTarget, currency)}`}</span>
-        </div>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-ink/[0.08]">
-          <div className={`h-full rounded-full transition-[width] duration-700 ease-out ${monthlyRemaining > 0 ? 'bg-coral' : 'bg-forest'}`} style={{ width: `${monthlyPercentage}%` }} />
-        </div>
-        <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] font-normal">
-          <span className="text-forest">Đã góp: {loading ? '...' : formatMoney(monthlyContributed, currency)}</span>
-          <span className="text-coral">Còn thiếu: {loading ? '...' : formatMoney(monthlyRemaining, currency)}</span>
-        </div>
-      </div>
-
-      {!loading && fundPockets.length > 0 && (
-        <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
-          {fundPockets.map((pocket) => {
-            const hasTarget = Number(pocket.monthlyTarget || 0) > 0;
-            const progress = hasTarget ? pocket.monthlyPercentage : 0;
-            return (
-              <div key={pocket.id} className="rounded-[10px] border border-white/75 bg-white/52 px-2.5 py-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: pocket.color }} />
-                  <span className="min-w-0 flex-1 truncate text-[11px] font-normal text-ink/65">{pocket.name}</span>
-                  <span className="shrink-0 text-[10px] font-normal text-ink">{hasTarget ? `${formatMoney(pocket.monthlyContributed, currency)} / ${formatMoney(pocket.monthlyTarget, currency)}` : formatMoney(pocket.balance, currency)}</span>
-                </div>
-                <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-ink/[0.07]"><div className={`h-full rounded-full transition-[width] duration-500 ${pocket.monthlyRemaining > 0 ? 'bg-coral' : 'bg-forest'}`} style={{ width: `${progress}%` }} /></div>
-                {hasTarget ? (
-                  <div className="mt-1.5 flex items-center justify-between text-[9px] font-normal text-ink/42">
-                    <span>Đã góp {formatMoney(pocket.monthlyContributed, currency)}</span>
-                    <span className={pocket.monthlyRemaining > 0 ? 'text-coral' : 'text-forest'}>{pocket.monthlyRemaining > 0 ? `Còn thiếu ${formatMoney(pocket.monthlyRemaining, currency)}` : 'Đã góp đủ'}</span>
-                  </div>
-                ) : <div className="mt-1.5 text-[9px] font-normal text-ink/30">Chưa đặt chỉ tiêu nạp quỹ</div>}
+    <div className="space-y-4 sm:space-y-5">
+      {/* 1. Phần Quỹ chung - Theo dõi kế hoạch nạp quỹ tháng này */}
+      <section className="overflow-hidden rounded-[18px] border border-ink/[0.06] bg-[linear-gradient(135deg,rgba(230,242,237,0.92),rgba(255,250,240,0.88))] p-3.5 shadow-card sm:p-5">
+        <button
+          type="button"
+          onClick={() => setFundPlanExpanded((prev) => !prev)}
+          className="flex w-full items-center justify-between gap-3 text-left transition active:scale-[0.99]"
+          aria-expanded={fundPlanExpanded}
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-8.5 place-items-center rounded-[11px] bg-white/85 text-forest shadow-sm sm:size-9">
+              <Landmark className="size-4.5" />
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-ink sm:text-base">Quỹ chung</h2>
+                {!fundPlanExpanded && monthlyTarget > 0 && !loading && (
+                  <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${monthlyRemaining > 0 ? 'bg-coral/10 text-coral' : 'bg-forest/10 text-forest'}`}>
+                    {Math.round(monthlyPercentage)}%
+                  </span>
+                )}
               </div>
-            );
-          })}
+              <p className="text-[10px] font-normal text-ink/45 sm:text-[11px]">Theo dõi kế hoạch nạp quỹ tháng này</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {!fundPlanExpanded && !loading && monthlyTarget > 0 && (
+              <span className="hidden text-[10px] font-medium text-ink/50 sm:inline">
+                Đã góp: {formatMoney(monthlyContributed, currency)}
+              </span>
+            )}
+            <span className="grid size-7 place-items-center rounded-full bg-white/70 text-ink/50 transition-colors hover:bg-white/90">
+              <ChevronDown className={`size-4 transition-transform duration-200 ${fundPlanExpanded ? 'rotate-180' : ''}`} />
+            </span>
+          </div>
+        </button>
+
+        {fundPlanExpanded && (
+          <div className="animate-fade-only mt-3 pt-3 border-t border-ink/[0.06]">
+            <div className="rounded-[11px] border border-white/70 bg-white/45 px-2.5 py-2 sm:px-3 sm:py-2.5">
+              <div className="flex items-center justify-between gap-3 text-[9px] font-normal text-ink/42 sm:text-[10px]">
+                <span>Tiến độ nạp quỹ</span>
+                <span>{loading ? '...' : `Mục tiêu ${formatMoney(monthlyTarget, currency)}`}</span>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-ink/[0.08]">
+                <div
+                  className={`h-full rounded-full transition-[width] duration-700 ease-out ${monthlyRemaining > 0 ? 'bg-coral' : 'bg-forest'}`}
+                  style={{ width: `${monthlyPercentage}%` }}
+                />
+              </div>
+              <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] font-normal sm:text-[11px]">
+                <span className="text-forest">Đã góp: {loading ? '...' : formatMoney(monthlyContributed, currency)}</span>
+                <span className="text-coral">Còn thiếu: {loading ? '...' : formatMoney(monthlyRemaining, currency)}</span>
+              </div>
+            </div>
+
+            {!loading && fundPockets.length > 0 && (
+              <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
+                {fundPockets.map((pocket) => {
+                  const hasTarget = Number(pocket.monthlyTarget || 0) > 0;
+                  const progress = hasTarget ? pocket.monthlyPercentage : 0;
+                  return (
+                    <div key={pocket.id} className="rounded-[10px] border border-white/75 bg-white/55 px-2.5 py-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: pocket.color }} />
+                        <span className="min-w-0 flex-1 truncate text-[11px] font-normal text-ink/65">{pocket.name}</span>
+                        <span className="shrink-0 text-[10px] font-normal text-ink">
+                          {hasTarget
+                            ? `${formatMoney(pocket.monthlyContributed, currency)} / ${formatMoney(pocket.monthlyTarget, currency)}`
+                            : formatMoney(pocket.balance, currency)}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-ink/[0.07]">
+                        <div
+                          className={`h-full rounded-full transition-[width] duration-500 ${pocket.monthlyRemaining > 0 ? 'bg-coral' : 'bg-forest'}`}
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                      {hasTarget ? (
+                        <div className="mt-1.5 flex items-center justify-between text-[9px] font-normal text-ink/42">
+                          <span>Đã góp {formatMoney(pocket.monthlyContributed, currency)}</span>
+                          <span className={pocket.monthlyRemaining > 0 ? 'text-coral' : 'text-forest'}>
+                            {pocket.monthlyRemaining > 0 ? `Còn thiếu ${formatMoney(pocket.monthlyRemaining, currency)}` : 'Đã góp đủ'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="mt-1.5 text-[9px] font-normal text-ink/30">Chưa đặt chỉ tiêu nạp quỹ</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {!loading && !fundPockets.length && (
+              <p className="mt-3 rounded-[10px] border border-white/70 bg-white/45 px-3 py-4 text-center text-[10px] font-normal text-ink/38">
+                Chưa có danh mục nào được thiết lập nạp quỹ trong tháng này.
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* 2. Phần Nạp quỹ gần đây */}
+      <section className="overflow-hidden rounded-[18px] border border-ink/[0.06] bg-paper/90 p-3.5 shadow-card sm:p-5">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setContributionsExpanded((prev) => !prev)}
+            className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left transition active:scale-[0.99]"
+            aria-expanded={contributionsExpanded}
+          >
+            <div className="flex items-center gap-2">
+              <CalendarDays className="size-5 text-forest" />
+              <h2 className="whitespace-nowrap text-base font-bold tracking-[-0.02em] text-ink sm:text-xl">
+                {filtered ? `Nạp quỹ ${selectedDateLabel}` : 'Nạp quỹ gần đây'}
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              {!contributionsExpanded && contributions.length > 0 && !loading && (
+                <span className="text-[11px] font-semibold text-forest">
+                  +{formatMoney(totalContributionsAmount, currency)}
+                </span>
+              )}
+              <span className="grid size-7 place-items-center rounded-full bg-ink/[0.04] text-ink/50 transition-colors hover:bg-ink/[0.08]">
+                <ChevronDown className={`size-4 transition-transform duration-200 ${contributionsExpanded ? 'rotate-180' : ''}`} />
+              </span>
+            </div>
+          </button>
+          {filtered && onClearFilter && (
+            <button
+              type="button"
+              onClick={onClearFilter}
+              className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-[9px] bg-ink/[0.045] px-2.5 text-[10px] font-medium text-ink/52 transition active:scale-[0.98]"
+            >
+              <X className="size-3.5" /> Xem cả tháng
+            </button>
+          )}
         </div>
-      )}
 
-      {!loading && !fundPockets.length && <p className="mt-3 rounded-[10px] border border-white/70 bg-white/45 px-3 py-4 text-center text-[10px] font-normal text-ink/38">Chưa có danh mục nào được thiết lập nạp quỹ trong tháng này.</p>}
-
-      {!loading && (fund?.recentContributions?.length > 0 || filtered) && (
-        <section className="mt-3 rounded-[11px] border border-white/75 bg-white/45 px-2.5 py-2.5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="size-3.5 text-forest" />
-              <h3 className="text-[10px] font-medium text-ink/65">Nạp quỹ gần đây</h3>
-            </div>
-            {filtered && <span className="text-[9px] text-ink/35">Theo ngày đã chọn</span>}
+        {contributionsExpanded && (
+          <div className="animate-fade-only mt-2">
+            {loading ? (
+              <TransactionListSkeleton compact />
+            ) : (
+              <FundContributionList
+                contributions={contributions}
+                currency={currency}
+                onEdit={onEditContribution}
+                onDelete={onDeleteContribution}
+              />
+            )}
           </div>
-          <FundContributionList contributions={contributions} currency={currency} onEdit={onEditContribution} onDelete={onDeleteContribution} />
-        </section>
-      )}
+        )}
+      </section>
 
-      {!loading && (transactions.length > 0 || filtered) && (
-        <section className="mt-3 rounded-[11px] border border-white/75 bg-white/45 px-2.5 py-2.5">
-          <div className="flex items-center justify-between gap-3">
+      {/* 3. Phần Chi tiêu quỹ gần đây */}
+      <section className="overflow-hidden rounded-[18px] border border-ink/[0.06] bg-paper/90 p-3.5 shadow-card sm:p-5">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setExpensesExpanded((prev) => !prev)}
+            className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left transition active:scale-[0.99]"
+            aria-expanded={expensesExpanded}
+          >
             <div className="flex items-center gap-2">
-              <Landmark className="size-3.5 text-coral" />
-              <h3 className="text-[10px] font-medium text-ink/65">Chi tiêu quỹ gần đây</h3>
+              <Landmark className="size-5 text-coral" />
+              <h2 className="whitespace-nowrap text-base font-bold tracking-[-0.02em] text-ink sm:text-xl">
+                {filtered ? `Chi tiêu quỹ ${selectedDateLabel}` : 'Chi tiêu quỹ gần đây'}
+              </h2>
             </div>
-            {filtered && <span className="text-[9px] text-ink/35">Theo ngày đã chọn</span>}
+            <div className="flex items-center gap-2">
+              {!expensesExpanded && transactions.length > 0 && !loading && (
+                <span className="text-[11px] font-semibold text-coral">
+                  −{formatMoney(totalExpensesAmount, currency)}
+                </span>
+              )}
+              <span className="grid size-7 place-items-center rounded-full bg-ink/[0.04] text-ink/50 transition-colors hover:bg-ink/[0.08]">
+                <ChevronDown className={`size-4 transition-transform duration-200 ${expensesExpanded ? 'rotate-180' : ''}`} />
+              </span>
+            </div>
+          </button>
+          {filtered && onClearFilter && (
+            <button
+              type="button"
+              onClick={onClearFilter}
+              className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-[9px] bg-ink/[0.045] px-2.5 text-[10px] font-medium text-ink/52 transition active:scale-[0.98]"
+            >
+              <X className="size-3.5" /> Xem cả tháng
+            </button>
+          )}
+        </div>
+
+        {expensesExpanded && (
+          <div className="animate-fade-only mt-2">
+            {loading ? (
+              <TransactionListSkeleton compact />
+            ) : transactions.length ? (
+              <div className="-mx-3.5 sm:-mx-5">
+                <TransactionList
+                  transactions={transactions}
+                  currency={currency}
+                  onDelete={onDeleteTransaction}
+                  compact
+                  groupByDate={groupTransactionsByDate}
+                  showTime
+                  showMember
+                />
+              </div>
+            ) : (
+              <p className="mt-2.5 rounded-[10px] bg-ink/[0.025] px-3 py-4 text-center text-[10px] text-ink/38">
+                {filtered ? 'Không có chi tiêu quỹ trong ngày đã chọn.' : 'Chưa có chi tiêu quỹ trong tháng này.'}
+              </p>
+            )}
           </div>
-          {transactions.length ? (
-            <div className="mt-1.5 -mx-2.5 overflow-hidden rounded-[10px] bg-paper">
-              <TransactionList transactions={transactions} currency={currency} onDelete={onDeleteTransaction} compact groupByDate={groupTransactionsByDate} showTime showMember />
-            </div>
-          ) : <p className="mt-2.5 rounded-[10px] bg-white/55 px-3 py-4 text-center text-[10px] text-ink/38">Không có chi tiêu quỹ trong ngày đã chọn.</p>}
-        </section>
-      )}
-    </section>
+        )}
+      </section>
+    </div>
   );
 }
 
 function FundContributionList({ contributions, currency, onEdit, onDelete }) {
   if (!contributions.length) {
-    return <p className="mt-2.5 rounded-[10px] bg-white/55 px-3 py-4 text-center text-[10px] text-ink/38">Không có khoản nạp quỹ trong ngày đã chọn.</p>;
+    return <p className="mt-2.5 rounded-[10px] bg-ink/[0.025] px-3 py-4 text-center text-[10px] text-ink/38">Chưa có khoản nạp quỹ trong tháng này.</p>;
   }
 
   return (
-    <div className="mt-1.5 -mx-2.5 overflow-hidden rounded-[10px] bg-paper">
+    <div className="-mx-3.5 overflow-hidden sm:-mx-5">
       {groupContributionsByDate(contributions).map((group) => (
         <section key={group.date}>
-          <div className="flex items-center justify-between gap-4 border-y border-ink/[0.06] bg-ink/[0.035] px-3 py-2 text-[10px] font-medium text-ink/58 first:border-t-0">
+          <div className="flex items-center justify-between gap-4 border-y border-ink/[0.06] bg-ink/[0.035] px-3.5 py-2 text-xs font-medium text-ink/58 first:border-t-0 sm:px-5">
             <span>{formatContributionDay(group.date)}</span>
             <span className="text-forest">+{formatMoney(group.total, currency)}</span>
           </div>
-          {group.contributions.map((contribution) => (
-            <FundContributionRow key={contribution.id} contribution={contribution} currency={currency} onEdit={onEdit} onDelete={onDelete} />
-          ))}
+          <div>
+            {group.contributions.map((contribution) => (
+              <FundContributionRow key={contribution.id} contribution={contribution} currency={currency} onEdit={onEdit} onDelete={onDelete} />
+            ))}
+          </div>
         </section>
       ))}
     </div>
@@ -449,7 +613,7 @@ function FundContributionRow({ contribution, currency, onEdit, onDelete }) {
         tabIndex={0}
         aria-label={`Khoản nạp ${contribution.pocket.name}. Vuốt sang trái để sửa hoặc xóa.`}
       >
-        <span className="ml-3 grid size-10 shrink-0 place-items-center rounded-xl bg-mint/35 text-forest">
+        <span className="ml-3.5 grid size-10 shrink-0 place-items-center rounded-xl bg-mint/35 text-forest sm:ml-5">
           <Landmark className="size-[18px]" style={{ color: contribution.pocket.color || '#3D7060' }} />
         </span>
         <div className="min-w-0 flex-1">
@@ -462,7 +626,7 @@ function FundContributionRow({ contribution, currency, onEdit, onDelete }) {
             <span className="truncate">{shortDisplayName(contribution.displayName)}</span>
           </div>
         </div>
-        <div className="shrink-0 pr-3 text-right sm:pr-4">
+        <div className="shrink-0 pr-3.5 text-right sm:pr-5">
           <div className="whitespace-nowrap text-sm font-normal text-[#2D8A72]">+{formatMoney(contribution.amount, currency)}</div>
         </div>
       </article>
