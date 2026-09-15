@@ -472,17 +472,15 @@ function FundCard({
             {loading ? (
               <TransactionListSkeleton compact />
             ) : transactions.length ? (
-              <div className="-mx-3.5 sm:-mx-5">
-                <TransactionList
-                  transactions={transactions}
-                  currency={currency}
-                  onDelete={onDeleteTransaction}
-                  compact
-                  groupByDate={groupTransactionsByDate}
-                  showTime
-                  showMember
-                />
-              </div>
+              <TransactionList
+                transactions={transactions}
+                currency={currency}
+                onDelete={onDeleteTransaction}
+                compact
+                groupByDate={groupTransactionsByDate}
+                showTime
+                showMember
+              />
             ) : (
               <p className="mt-2.5 rounded-[10px] bg-ink/[0.025] px-3 py-4 text-center text-[10px] text-ink/38">
                 {filtered ? 'Không có chi tiêu quỹ trong ngày đã chọn.' : 'Chưa có chi tiêu quỹ trong tháng này.'}
