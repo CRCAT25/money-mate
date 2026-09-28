@@ -47,10 +47,28 @@ export async function listUserSpaces(db, userId) {
   return rows.map(mapSpace);
 }
 
+const spaceCache = new Map();
+const SPACE_CACHE_TTL_MS = 15000;
+
+export function invalidateSpaceCache(spaceId) {
+  if (!spaceId) {
+    spaceCache.clear();
+    return;
+  }
+  for (const key of spaceCache.keys()) {
+    if (key.endsWith(`:${spaceId}`)) spaceCache.delete(key);
+  }
+}
+
 export async function getAccessibleSpace(db, userId, spaceId) {
-  await ensurePersonalSpace(db, userId);
   const requested = spaceId || null;
   if (requested) {
+    const cacheKey = `${userId}:${requested}`;
+    const cached = spaceCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return structuredClone(cached.value);
+    }
+
     const row = await db.prepare(`
       SELECT f.*, fm.role
       FROM families f
@@ -60,9 +78,15 @@ export async function getAccessibleSpace(db, userId, spaceId) {
         OR (f.space_type = 'family' AND fm.user_id = ?)
       )
     `).get(userId, requested, userId, userId);
-    return row ? mapSpace(row) : null;
+    if (row) {
+      const space = mapSpace(row);
+      spaceCache.set(cacheKey, { value: space, expiresAt: Date.now() + SPACE_CACHE_TTL_MS });
+      return structuredClone(space);
+    }
+    return null;
   }
 
+  await ensurePersonalSpace(db, userId);
   const spaces = await listUserSpaces(db, userId);
   return spaces.find((space) => space.type === 'family') || spaces[0] || null;
 }

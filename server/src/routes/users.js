@@ -1,7 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import { body } from 'express-validator';
-import { authenticate } from '../auth.js';
+import { authenticate, invalidateUserCache } from '../auth.js';
 import { config } from '../config.js';
 import { getDb } from '../db.js';
 import { emitFamily } from '../realtime.js';
@@ -60,6 +60,7 @@ router.patch(
         console.info(`[MoneyMate] Verify ${req.body.email}: ${previewVerificationUrl}`);
       }
     });
+    invalidateUserCache(req.user.id);
     const spaces = await listUserSpaces(db, req.user.id);
     await Promise.all(spaces.map(async (space) => {
       await bumpFamilyRevision(db, space.id, { base: true, transactions: true });
@@ -90,12 +91,14 @@ router.patch(
       await transaction.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.user.id);
       await transaction.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(req.user.id);
     });
+    invalidateUserCache(req.user.id);
     res.json({ message: 'Đã đổi mật khẩu. Vui lòng đăng nhập lại.' });
   },
 );
 
 router.delete('/me', async (req, res) => {
   const db = getDb();
+  invalidateUserCache(req.user.id);
   const member = await db.prepare('SELECT role, family_id FROM family_members WHERE user_id = ?').get(req.user.id);
   if (member?.role === 'owner') {
     const count = await db.prepare('SELECT COUNT(*) AS count FROM family_members WHERE family_id = ?').get(member.family_id);

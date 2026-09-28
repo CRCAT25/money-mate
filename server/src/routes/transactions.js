@@ -63,7 +63,7 @@ router.get(
       ORDER BY t.transaction_date DESC, t.created_at DESC
       LIMIT ?
     `).all(...params);
-    res.json(transactions.map(mapTransaction));
+    res.json(transactions.map((t) => mapTransaction(t, req.user.id, req.space.type)));
   },
 );
 
@@ -79,7 +79,7 @@ router.get('/:id', [param('id').isUUID()], validate, async (req, res) => {
     WHERE t.id = ? AND t.family_id = ?
   `).get(req.params.id, req.space.id);
   if (!transaction) return res.status(404).json({ message: 'Không tìm thấy giao dịch.' });
-  res.json(mapTransaction(transaction));
+  res.json(mapTransaction(transaction, req.user.id, req.space.type));
 });
 
 router.post('/', transactionRules, validate, async (req, res) => {
@@ -152,9 +152,12 @@ router.patch('/:id', [param('id').isUUID(), ...transactionRules], validate, asyn
   if (paidFromFund && !fundPocket) return res.status(404).json({ message: 'Không tìm thấy quỹ nhỏ đã chọn.' });
   const result = await db.transaction(async (transaction) => {
     await lockFund(transaction, req.space.id);
-    const existing = await transaction.prepare('SELECT id FROM transactions WHERE id = ? AND family_id = ?')
+    const existing = await transaction.prepare('SELECT id, created_by, assigned_to FROM transactions WHERE id = ? AND family_id = ?')
       .get(req.params.id, req.space.id);
     if (!existing) return { status: 404, message: 'Không tìm thấy giao dịch.' };
+    if (req.space.type === 'family' && existing.assigned_to !== req.user.id && existing.created_by !== req.user.id) {
+      return { status: 403, message: 'Bạn chỉ có thể chỉnh sửa giao dịch của chính mình.' };
+    }
     if (paidFromFund) {
       const fund = await getFundTotals(transaction, req.space.id, { excludeTransactionId: req.params.id, pocketId: fundPocket.id });
       if (fund.balance < Number(req.body.amount)) {
@@ -188,6 +191,12 @@ router.patch('/:id', [param('id').isUUID(), ...transactionRules], validate, asyn
 
 router.delete('/:id', [param('id').isUUID()], validate, async (req, res) => {
   const db = getDb();
+  const existing = await db.prepare('SELECT id, created_by, assigned_to FROM transactions WHERE id = ? AND family_id = ?')
+    .get(req.params.id, req.space.id);
+  if (!existing) return res.status(404).json({ message: 'Không tìm thấy giao dịch.' });
+  if (req.space.type === 'family' && existing.assigned_to !== req.user.id && existing.created_by !== req.user.id) {
+    return res.status(403).json({ message: 'Bạn chỉ có thể xóa giao dịch của chính mình.' });
+  }
   const result = await db.prepare('DELETE FROM transactions WHERE id = ? AND family_id = ?')
     .run(req.params.id, req.space.id);
   if (!result.changes) return res.status(404).json({ message: 'Không tìm thấy giao dịch.' });
@@ -203,7 +212,8 @@ async function validateRelations(db, familyId, data) {
   return { category };
 }
 
-function mapTransaction(transaction) {
+function mapTransaction(transaction, currentUserId = null, spaceType = 'family') {
+  const canManage = Boolean(spaceType !== 'family' || !currentUserId || transaction.assigned_to === currentUserId || transaction.created_by === currentUserId);
   return {
     id: transaction.id,
     type: transaction.type,
@@ -228,6 +238,7 @@ function mapTransaction(transaction) {
       avatarUrl: transaction.assigned_avatar,
     },
     createdBy: transaction.created_by,
+    canManage,
     createdAt: normalizeTimestamp(transaction.created_at),
     updatedAt: normalizeTimestamp(transaction.updated_at),
   };

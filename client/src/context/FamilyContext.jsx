@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import api, { errorMessage } from '../utils/api.js';
-import { sessionStorage } from '../utils/storage.js';
+import { baseDataStorage, sessionStorage } from '../utils/storage.js';
 import { useAuth } from './AuthContext.jsx';
 import { useToast } from './ToastContext.jsx';
 
@@ -12,10 +12,10 @@ export function FamilyProvider({ children }) {
   const { user, family: activeSpace, activeSpaceId } = useAuth();
   const { notify } = useToast();
   const { pathname } = useLocation();
-  const [familyDetails, setFamilyDetails] = useState(null);
-  const [categories, setCategories] = useState([]);
+  const [familyDetails, setFamilyDetails] = useState(() => baseDataStorage.getFamily(activeSpaceId));
+  const [categories, setCategories] = useState(() => baseDataStorage.getCategories(activeSpaceId));
   const [revision, setRevision] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !baseDataStorage.getFamily(activeSpaceId));
   const revisionRef = useRef(0);
   const syncState = useRef(null);
   const syncRequest = useRef(null);
@@ -52,6 +52,8 @@ export function FamilyProvider({ children }) {
     if (requestedSpaceId !== activeSpaceId) return;
     setFamilyDetails(familyResponse.data);
     setCategories(categoriesResponse.data);
+    baseDataStorage.setFamily(requestedSpaceId, familyResponse.data);
+    baseDataStorage.setCategories(requestedSpaceId, categoriesResponse.data);
     clearPageCache();
     if (familyResponse.data.revisions) syncState.current = familyResponse.data.revisions;
     setLoading(false);
@@ -101,9 +103,17 @@ export function FamilyProvider({ children }) {
       setLoading(false);
       return;
     }
-    setLoading(true);
-    setFamilyDetails(null);
-    setCategories([]);
+    const cachedFamily = baseDataStorage.getFamily(activeSpaceId);
+    const cachedCategories = baseDataStorage.getCategories(activeSpaceId);
+    if (cachedFamily) {
+      setFamilyDetails(cachedFamily);
+      setCategories(cachedCategories || []);
+      setLoading(false);
+    } else {
+      setLoading(true);
+      setFamilyDetails(null);
+      setCategories([]);
+    }
     syncState.current = null;
     pendingLocalTransactions.current = 0;
     pendingLocalBaseChanges.current = 0;

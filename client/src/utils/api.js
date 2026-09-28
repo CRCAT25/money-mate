@@ -13,8 +13,44 @@ const api = axios.create({
   timeout: 12000,
 });
 
-api.interceptors.request.use((request) => {
-  const token = sessionStorage.getAccess();
+function isTokenExpired(token) {
+  if (!token) return true;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return true;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return payload.exp ? Date.now() >= payload.exp * 1000 - 30000 : false;
+  } catch {
+    return false;
+  }
+}
+
+api.interceptors.request.use(async (request) => {
+  let token = sessionStorage.getAccess();
+  const refreshToken = sessionStorage.getRefresh();
+
+  if (refreshToken && isTokenExpired(token) && !request.url?.includes('/auth/refresh')) {
+    refreshPromise ||= axios
+      .post(`${api.defaults.baseURL}/auth/refresh`, { refreshToken })
+      .then(({ data }) => {
+        sessionStorage.set(data);
+        return data.accessToken;
+      })
+      .catch((err) => {
+        if (err.response?.status === 401 || err.response?.status === 403) {
+          sessionStorage.clear();
+          window.dispatchEvent(new Event('moneymate:session-expired'));
+        }
+        return null;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+
+    const refreshedToken = await refreshPromise;
+    if (refreshedToken) token = refreshedToken;
+  }
+
   if (token) request.headers.Authorization = `Bearer ${token}`;
   if (activeSpaceId) request.headers['X-MoneyMate-Space-Id'] = activeSpaceId;
   return request;

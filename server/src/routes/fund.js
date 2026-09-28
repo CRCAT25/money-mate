@@ -22,7 +22,6 @@ router.get(
     const db = getDb();
     const month = req.query.month || new Date().toISOString().slice(0, 7);
     await ensureDefaultFundPocket(db, req.space.id);
-    await ensureExpenseFundPockets(db, req.space.id);
     await syncMissingFundTargetsFromBudgets(db, req.space.id, month);
     res.json(await buildFundSummary(db, req.space.id, month));
   },
@@ -283,11 +282,14 @@ router.patch(
     const result = await db.transaction(async (transaction) => {
       await lockFund(transaction, req.space.id);
       const existing = await transaction.prepare(`
-        SELECT id, fund_pocket_id, contribution_date, note
+        SELECT id, contributor_user_id, fund_pocket_id, contribution_date, note
         FROM fund_contributions
         WHERE id = ? AND family_id = ?
       `).get(req.params.id, req.space.id);
       if (!existing) return { status: 404, message: 'Không tìm thấy khoản nạp quỹ.' };
+      if (req.space.type === 'family' && existing.contributor_user_id && existing.contributor_user_id !== req.user.id) {
+        return { status: 403, message: 'Bạn chỉ có thể chỉnh sửa khoản nạp quỹ của chính mình.' };
+      }
 
       const nextPocketId = req.body.pocketId || existing.fund_pocket_id;
       if (req.body.pocketId) {
@@ -322,11 +324,20 @@ router.delete(
     const db = getDb();
     const result = await db.transaction(async (transaction) => {
       await lockFund(transaction, req.space.id);
-      const deleted = await transaction.prepare(`
+      const existing = await transaction.prepare(`
+        SELECT id, contributor_user_id
+        FROM fund_contributions
+        WHERE id = ? AND family_id = ?
+      `).get(req.params.id, req.space.id);
+      if (!existing) return { status: 404, message: 'Không tìm thấy khoản nạp quỹ.' };
+      if (req.space.type === 'family' && existing.contributor_user_id && existing.contributor_user_id !== req.user.id) {
+        return { status: 403, message: 'Bạn chỉ có thể xóa khoản nạp quỹ của chính mình.' };
+      }
+
+      await transaction.prepare(`
         DELETE FROM fund_contributions
         WHERE id = ? AND family_id = ?
       `).run(req.params.id, req.space.id);
-      if (!deleted.changes) return { status: 404, message: 'Không tìm thấy khoản nạp quỹ.' };
       await bumpFamilyRevision(transaction, req.space.id, { transactions: true });
       return null;
     });

@@ -131,7 +131,29 @@ function postgresQuery(source) {
     .replace(/\?/g, () => `$${++index}`);
 }
 
+const CURRENT_SCHEMA_VERSION = 1;
+
 async function migrate(db) {
+  if (db.kind === 'postgres') {
+    await db.sql.unsafe(`
+      CREATE TABLE IF NOT EXISTS schema_version (
+        version INTEGER PRIMARY KEY,
+        migrated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    const rows = await db.sql.unsafe('SELECT version FROM schema_version WHERE version = $1', [CURRENT_SCHEMA_VERSION]);
+    if (rows && rows.length > 0) return;
+  } else {
+    db.sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS schema_version (
+        version INTEGER PRIMARY KEY,
+        migrated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    const row = db.sqlite.prepare('SELECT version FROM schema_version WHERE version = ?').get(CURRENT_SCHEMA_VERSION);
+    if (row) return;
+  }
+
   const amountType = db.kind === 'postgres' ? 'BIGINT' : 'INTEGER';
   await db.exec(`
     CREATE TABLE IF NOT EXISTS families (
@@ -396,6 +418,12 @@ async function migrate(db) {
   await ensureFundContributionColumns(db);
   await backfillFundPockets(db);
   await backfillPersonalSpaces(db);
+
+  if (db.kind === 'postgres') {
+    await db.sql.unsafe('INSERT INTO schema_version (version) VALUES ($1) ON CONFLICT (version) DO NOTHING', [CURRENT_SCHEMA_VERSION]);
+  } else {
+    db.sqlite.exec(`INSERT OR IGNORE INTO schema_version (version) VALUES (${CURRENT_SCHEMA_VERSION})`);
+  }
 }
 
 async function ensureFamilyColumns(db) {

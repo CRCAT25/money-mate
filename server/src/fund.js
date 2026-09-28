@@ -23,25 +23,31 @@ export async function ensureDefaultFundPocket(db, familyId) {
 }
 
 export async function ensureExpenseFundPockets(db, familyId) {
-  await archiveDetachedCategoryPockets(db, familyId);
   const [categories, pockets] = await Promise.all([
     db.prepare(`
       SELECT id, name, color FROM categories
       WHERE family_id = ? AND type = 'expense'
       ORDER BY is_default DESC, LOWER(name)
     `).all(familyId),
-    db.prepare('SELECT id, name, color, category_id FROM fund_pockets WHERE family_id = ? AND is_archived = 0').all(familyId),
+    db.prepare('SELECT id, name, color, category_id, is_default FROM fund_pockets WHERE family_id = ? AND is_archived = 0').all(familyId),
   ]);
+  if (pockets.some((p) => !p.category_id && !p.is_default)) {
+    await archiveDetachedCategoryPockets(db, familyId);
+  }
   const byCategory = new Map(pockets.filter((pocket) => pocket.category_id).map((pocket) => [pocket.category_id, pocket]));
   const byName = new Map(pockets.map((pocket) => [pocket.name.trim().toLocaleLowerCase('vi'), pocket]));
 
   for (const category of categories) {
     let pocket = byCategory.get(category.id);
     if (pocket) {
-      const nameConflict = await db.prepare('SELECT id FROM fund_pockets WHERE family_id = ? AND LOWER(name) = LOWER(?) AND id <> ?')
-        .get(familyId, category.name, pocket.id);
-      await db.prepare(`UPDATE fund_pockets SET name = ?, color = ? WHERE id = ?`)
-        .run(nameConflict ? pocket.name : category.name, category.color, pocket.id);
+      if (pocket.name !== category.name || pocket.color !== category.color) {
+        const nameConflict = await db.prepare('SELECT id FROM fund_pockets WHERE family_id = ? AND LOWER(name) = LOWER(?) AND id <> ?')
+          .get(familyId, category.name, pocket.id);
+        await db.prepare(`UPDATE fund_pockets SET name = ?, color = ? WHERE id = ?`)
+          .run(nameConflict ? pocket.name : category.name, category.color, pocket.id);
+        pocket.name = nameConflict ? pocket.name : category.name;
+        pocket.color = category.color;
+      }
       continue;
     }
 

@@ -5,6 +5,8 @@ import { formatMoney } from '../utils/formatters.js';
 import Avatar from './ui/Avatar.jsx';
 import CategoryIcon from './ui/CategoryIcon.jsx';
 import EmptyState from './ui/EmptyState.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+import { useFamilyData } from '../context/FamilyContext.jsx';
 
 export default function TransactionList({ transactions, currency, onDelete, compact = false, groupByDate = false, showTime = false, showMember = true }) {
   const [openRow, setOpenRow] = useState(null);
@@ -50,7 +52,14 @@ export default function TransactionList({ transactions, currency, onDelete, comp
 }
 
 function TransactionRow({ transaction, currency, compact, showTime, showMember, onDelete, open, onOpen, onClose }) {
-  const actionWidth = onDelete ? 128 : 64;
+  const { user } = useAuth();
+  const { isPersonal } = useFamilyData();
+  const canManage = Boolean(
+    isPersonal ||
+    (transaction.canManage ?? (transaction.assignedTo?.id === user?.id || transaction.createdBy === user?.id))
+  );
+
+  const actionWidth = canManage ? (onDelete ? 128 : 64) : 0;
   const gesture = useRef(null);
   const [dragging, setDragging] = useState(false);
   const [offset, setOffset] = useState(open ? -actionWidth : 0);
@@ -63,7 +72,7 @@ function TransactionRow({ transaction, currency, compact, showTime, showMember, 
     const current = gesture.current;
     gesture.current = null;
     setDragging(false);
-    if (!current) return;
+    if (!current || !canManage) return;
     if (!current.horizontal) {
       if (open) onClose();
       return;
@@ -73,7 +82,7 @@ function TransactionRow({ transaction, currency, compact, showTime, showMember, 
   };
 
   const handlePointerDown = (event) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (!canManage || (event.pointerType === 'mouse' && event.button !== 0)) return;
     gesture.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -86,6 +95,7 @@ function TransactionRow({ transaction, currency, compact, showTime, showMember, 
   };
 
   const handlePointerMove = (event) => {
+    if (!canManage) return;
     const current = gesture.current;
     if (!current || current.pointerId !== event.pointerId) return;
     const deltaX = event.clientX - current.startX;
@@ -109,43 +119,45 @@ function TransactionRow({ transaction, currency, compact, showTime, showMember, 
 
   return (
     <div className="relative overflow-hidden border-b border-ink/[0.06] bg-paper last:border-b-0" data-swipe-row>
-      <div
-        className={`absolute bottom-px right-[-2px] top-px flex overflow-hidden ${dragging ? '' : 'transition-[clip-path] duration-300 ease-out'}`}
-        style={{
-          width: `${actionWidth + 2}px`,
-          clipPath: `inset(0 0 0 ${Math.max(0, actionWidth + offset)}px)`,
-        }}
-        aria-hidden={!open && !dragging}
-      >
-        <Link
-          to={`/transactions/${transaction.id}/edit`}
-          className="flex w-16 flex-col items-center justify-center gap-1 bg-forest text-[10px] font-medium text-white transition hover:bg-[#255c50]"
-          onClick={onClose}
-          tabIndex={open ? 0 : -1}
-          aria-label={`Sửa giao dịch ${transaction.category.name}`}
+      {canManage && (
+        <div
+          className={`absolute bottom-px right-[-2px] top-px flex overflow-hidden ${dragging ? '' : 'transition-[clip-path] duration-300 ease-out'}`}
+          style={{
+            width: `${actionWidth + 2}px`,
+            clipPath: `inset(0 0 0 ${Math.max(0, actionWidth + offset)}px)`,
+          }}
+          aria-hidden={!open && !dragging}
         >
-          <Pencil className="size-[18px]" />
-          Sửa
-        </Link>
-        {onDelete && (
-          <button
-            type="button"
-            className="flex w-16 flex-col items-center justify-center gap-1 bg-coral text-[10px] font-medium text-white transition hover:bg-[#d9634b]"
-            onClick={() => { onClose(); onDelete(transaction); }}
+          <Link
+            to={`/transactions/${transaction.id}/edit`}
+            className="flex w-16 flex-col items-center justify-center gap-1 bg-forest text-[10px] font-medium text-white transition hover:bg-[#255c50]"
+            onClick={onClose}
             tabIndex={open ? 0 : -1}
-            aria-label={`Xóa giao dịch ${transaction.category.name}`}
+            aria-label={`Sửa giao dịch ${transaction.category.name}`}
           >
-            <Trash2 className="size-[18px]" />
-            Xóa
-          </button>
-        )}
-      </div>
+            <Pencil className="size-[18px]" />
+            Sửa
+          </Link>
+          {onDelete && (
+            <button
+              type="button"
+              className="flex w-16 flex-col items-center justify-center gap-1 bg-coral text-[10px] font-medium text-white transition hover:bg-[#d9634b]"
+              onClick={() => { onClose(); onDelete(transaction); }}
+              tabIndex={open ? 0 : -1}
+              aria-label={`Xóa giao dịch ${transaction.category.name}`}
+            >
+              <Trash2 className="size-[18px]" />
+              Xóa
+            </button>
+          )}
+        </div>
+      )}
 
       <article
-        className={`relative z-10 flex w-[calc(100%+2px)] touch-pan-y select-none items-center gap-2.5 bg-paper outline-none focus:outline-none focus-visible:outline-none ${dragging ? '' : 'transition-transform duration-300 ease-out'} ${compact ? 'py-3' : 'py-3.5'}`}
+        className={`relative z-10 flex w-[calc(100%+2px)] ${canManage ? 'touch-pan-y' : ''} select-none items-center gap-2.5 bg-paper outline-none focus:outline-none focus-visible:outline-none ${dragging ? '' : 'transition-transform duration-300 ease-out'} ${compact ? 'py-3' : 'py-3.5'}`}
         style={{
-          transform: `translateX(${offset}px)`,
-          willChange: 'transform',
+          transform: canManage ? `translateX(${offset}px)` : undefined,
+          willChange: canManage ? 'transform' : undefined,
           backfaceVisibility: 'hidden',
         }}
         onPointerDown={handlePointerDown}
@@ -153,11 +165,12 @@ function TransactionRow({ transaction, currency, compact, showTime, showMember, 
         onPointerUp={finishGesture}
         onPointerCancel={finishGesture}
         onKeyDown={(event) => {
+          if (!canManage) return;
           if (event.key === 'ArrowLeft') { event.preventDefault(); onOpen(); }
           if (event.key === 'ArrowRight' || event.key === 'Escape') { event.preventDefault(); onClose(); }
         }}
         tabIndex={0}
-        aria-label={`Giao dịch ${transaction.category.name}. Vuốt sang trái để sửa hoặc xóa.`}
+        aria-label={canManage ? `Giao dịch ${transaction.category.name}. Vuốt sang trái để sửa hoặc xóa.` : `Giao dịch ${transaction.category.name}`}
       >
         <span className="grid size-10 shrink-0 place-items-center rounded-xl" style={{ backgroundColor: `${transaction.category.color}1F`, color: transaction.category.color }}>
           <CategoryIcon name={transaction.category.icon} className="size-[18px]" />

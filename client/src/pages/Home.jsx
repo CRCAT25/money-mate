@@ -12,6 +12,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import api, { errorMessage } from '../utils/api.js';
 import { currentMonth, formatMoney } from '../utils/formatters.js';
 import { visibleFundPockets } from '../utils/fund.js';
+import { homeCacheStorage } from '../utils/storage.js';
 
 const weekDays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
@@ -23,7 +24,7 @@ export default function Home() {
   const [month, setMonth] = useState(currentMonth());
   const [selectedDates, setSelectedDates] = useState([]);
   const [contentView, setContentView] = useState(() => family?.type === 'family' ? 'fund' : 'transactions');
-  const initialHomeCache = getCache(`home:${month}`);
+  const initialHomeCache = getCache(`home:${month}`) || homeCacheStorage.get(family?.id, month);
   const [summary, setSummary] = useState(() => initialHomeCache?.summary || null);
   const [transactions, setTransactions] = useState(() => initialHomeCache?.transactions || []);
   const [fund, setFund] = useState(() => initialHomeCache?.fund || null);
@@ -44,11 +45,11 @@ export default function Home() {
   }, [contentView, showRecentTransactions]);
 
   useEffect(() => {
-    if (baseLoading) return undefined;
+    if (!family?.id) return undefined;
 
     let active = true;
     const cacheKey = `home:${month}`;
-    const cached = getCache(cacheKey);
+    const cached = getCache(cacheKey) || homeCacheStorage.get(family.id, month);
     if (cached) {
       setSummary(cached.summary);
       setTransactions(cached.transactions);
@@ -75,10 +76,11 @@ export default function Home() {
       setSummary(nextData.summary);
       setTransactions(nextData.transactions);
       setFund(nextData.fund || null);
+      homeCacheStorage.set(family.id, month, nextData);
     }).catch((error) => active && notify(errorMessage(error), 'error'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [month, notify, getCache, loadCache, loadFund, prefetchPages, baseLoading]);
+  }, [month, notify, getCache, loadCache, loadFund, prefetchPages, family?.id]);
 
   const transactionDailyCashflow = useMemo(() => transactions.reduce((totals, transaction) => {
     const day = totals[transaction.transactionDate] || { income: 0, expense: 0 };
@@ -518,7 +520,14 @@ function FundContributionList({ contributions, currency, onEdit, onDelete }) {
 }
 
 function FundContributionRow({ contribution, currency, onEdit, onDelete }) {
-  const actionWidth = 128;
+  const { user } = useAuth();
+  const { isPersonal } = useFamilyData();
+  const canManage = Boolean(
+    isPersonal ||
+    !contribution.userId ||
+    contribution.userId === user?.id
+  );
+  const actionWidth = canManage ? 128 : 0;
   const gesture = useRef(null);
   const [open, setOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -526,13 +535,13 @@ function FundContributionRow({ contribution, currency, onEdit, onDelete }) {
 
   useEffect(() => {
     if (!dragging) setOffset(open ? -actionWidth : 0);
-  }, [open, dragging]);
+  }, [open, actionWidth, dragging]);
 
   const finishGesture = () => {
     const current = gesture.current;
     gesture.current = null;
     setDragging(false);
-    if (!current) return;
+    if (!current || !canManage) return;
     if (!current.horizontal) {
       if (open) setOpen(false);
       return;
@@ -541,7 +550,7 @@ function FundContributionRow({ contribution, currency, onEdit, onDelete }) {
   };
 
   const handlePointerDown = (event) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (!canManage || (event.pointerType === 'mouse' && event.button !== 0)) return;
     gesture.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -554,6 +563,7 @@ function FundContributionRow({ contribution, currency, onEdit, onDelete }) {
   };
 
   const handlePointerMove = (event) => {
+    if (!canManage) return;
     const current = gesture.current;
     if (!current || current.pointerId !== event.pointerId) return;
     const deltaX = event.clientX - current.startX;
@@ -579,37 +589,40 @@ function FundContributionRow({ contribution, currency, onEdit, onDelete }) {
 
   return (
     <div className="relative overflow-hidden border-b border-ink/[0.06] bg-paper last:border-b-0" data-swipe-row>
-      <div
-        className={`absolute bottom-px right-[-2px] top-px flex overflow-hidden ${dragging ? '' : 'transition-[clip-path] duration-300 ease-out'}`}
-        style={{
-          width: `${actionWidth + 2}px`,
-          clipPath: `inset(0 0 0 ${Math.max(0, actionWidth + offset)}px)`,
-        }}
-        aria-hidden={!open && !dragging}
-      >
-        <button type="button" className="flex w-16 flex-col items-center justify-center gap-1 bg-forest text-[10px] font-medium text-white transition hover:bg-[#255c50]" onClick={() => { close(); onEdit(contribution); }} tabIndex={open ? 0 : -1} aria-label={`Sửa khoản nạp ${formatMoney(contribution.amount, currency)}`}>
-          <Pencil className="size-[18px]" />
-          Sửa
-        </button>
-        <button type="button" className="flex w-16 flex-col items-center justify-center gap-1 bg-coral text-[10px] font-medium text-white transition hover:bg-[#d9634b]" onClick={() => { close(); onDelete(contribution); }} tabIndex={open ? 0 : -1} aria-label={`Xóa khoản nạp ${formatMoney(contribution.amount, currency)}`}>
-          <Trash2 className="size-[18px]" />
-          Xóa
-        </button>
-      </div>
+      {canManage && (
+        <div
+          className={`absolute bottom-px right-[-2px] top-px flex overflow-hidden ${dragging ? '' : 'transition-[clip-path] duration-300 ease-out'}`}
+          style={{
+            width: `${actionWidth + 2}px`,
+            clipPath: `inset(0 0 0 ${Math.max(0, actionWidth + offset)}px)`,
+          }}
+          aria-hidden={!open && !dragging}
+        >
+          <button type="button" className="flex w-16 flex-col items-center justify-center gap-1 bg-forest text-[10px] font-medium text-white transition hover:bg-[#255c50]" onClick={() => { close(); onEdit(contribution); }} tabIndex={open ? 0 : -1} aria-label={`Sửa khoản nạp ${formatMoney(contribution.amount, currency)}`}>
+            <Pencil className="size-[18px]" />
+            Sửa
+          </button>
+          <button type="button" className="flex w-16 flex-col items-center justify-center gap-1 bg-coral text-[10px] font-medium text-white transition hover:bg-[#d9634b]" onClick={() => { close(); onDelete(contribution); }} tabIndex={open ? 0 : -1} aria-label={`Xóa khoản nạp ${formatMoney(contribution.amount, currency)}`}>
+            <Trash2 className="size-[18px]" />
+            Xóa
+          </button>
+        </div>
+      )}
 
       <article
-        className={`relative z-10 flex w-[calc(100%+2px)] touch-pan-y select-none items-center gap-2.5 bg-paper ${dragging ? '' : 'transition-transform duration-300 ease-out'} py-3`}
-        style={{ transform: `translateX(${offset}px)`, willChange: 'transform', backfaceVisibility: 'hidden' }}
+        className={`relative z-10 flex w-[calc(100%+2px)] ${canManage ? 'touch-pan-y' : ''} select-none items-center gap-2.5 bg-paper ${dragging ? '' : 'transition-transform duration-300 ease-out'} py-3`}
+        style={{ transform: canManage ? `translateX(${offset}px)` : undefined, willChange: canManage ? 'transform' : undefined, backfaceVisibility: 'hidden' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={finishGesture}
         onPointerCancel={finishGesture}
         onKeyDown={(event) => {
+          if (!canManage) return;
           if (event.key === 'ArrowLeft') { event.preventDefault(); setOpen(true); }
           if (event.key === 'ArrowRight' || event.key === 'Escape') { event.preventDefault(); setOpen(false); }
         }}
         tabIndex={0}
-        aria-label={`Khoản nạp ${contribution.pocket.name}. Vuốt sang trái để sửa hoặc xóa.`}
+        aria-label={canManage ? `Khoản nạp ${contribution.pocket.name}. Vuốt sang trái để sửa hoặc xóa.` : `Khoản nạp ${contribution.pocket.name}`}
       >
         <span className="ml-3.5 grid size-10 shrink-0 place-items-center rounded-xl bg-mint/35 text-forest sm:ml-5">
           <Landmark className="size-[18px]" style={{ color: contribution.pocket.color || '#3D7060' }} />

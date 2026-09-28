@@ -223,6 +223,128 @@ test('multiple family members can join by invite code', async () => {
 
   const updatedFamily = await request(app).get('/api/family').set(ownerAuth).expect(200);
   assert.equal(updatedFamily.body.members.length, 3);
+
+  const categories = await request(app).get('/api/categories').set(ownerAuth).expect(200);
+  const expenseCat = categories.body.find((c) => c.type === 'expense');
+  const partnerAuth = { Authorization: `Bearer ${partnerLogin.body.accessToken}` };
+
+  const ownerTx = await request(app)
+    .post('/api/transactions')
+    .set(ownerAuth)
+    .send({
+      type: 'expense',
+      amount: 150000,
+      categoryId: expenseCat.id,
+      transactionDate: '2026-08-10',
+      note: 'Chi tiêu của Owner',
+    })
+    .expect(201);
+
+  const partnerTx = await request(app)
+    .post('/api/transactions')
+    .set(partnerAuth)
+    .send({
+      type: 'expense',
+      amount: 200000,
+      categoryId: expenseCat.id,
+      transactionDate: '2026-08-10',
+      note: 'Chi tiêu của Partner',
+    })
+    .expect(201);
+
+  const partnerTxList = await request(app).get('/api/transactions?month=2026-08').set(partnerAuth).expect(200);
+  const partnerViewOwnerTx = partnerTxList.body.find((t) => t.id === ownerTx.body.id);
+  const partnerViewOwnTx = partnerTxList.body.find((t) => t.id === partnerTx.body.id);
+  assert.equal(partnerViewOwnerTx.canManage, false);
+  assert.equal(partnerViewOwnTx.canManage, true);
+
+  await request(app)
+    .patch(`/api/transactions/${ownerTx.body.id}`)
+    .set(partnerAuth)
+    .send({
+      type: 'expense',
+      amount: 180000,
+      categoryId: expenseCat.id,
+      transactionDate: '2026-08-10',
+      note: 'Partner sửa trộm',
+    })
+    .expect(403);
+
+  await request(app)
+    .delete(`/api/transactions/${ownerTx.body.id}`)
+    .set(partnerAuth)
+    .expect(403);
+
+  await request(app)
+    .patch(`/api/transactions/${partnerTx.body.id}`)
+    .set(ownerAuth)
+    .send({
+      type: 'expense',
+      amount: 250000,
+      categoryId: expenseCat.id,
+      transactionDate: '2026-08-10',
+      note: 'Owner sửa trộm',
+    })
+    .expect(403);
+
+  await request(app)
+    .delete(`/api/transactions/${partnerTx.body.id}`)
+    .set(ownerAuth)
+    .expect(403);
+
+  await request(app)
+    .patch(`/api/transactions/${partnerTx.body.id}`)
+    .set(partnerAuth)
+    .send({
+      type: 'expense',
+      amount: 210000,
+      categoryId: expenseCat.id,
+      transactionDate: '2026-08-10',
+      note: 'Partner tự sửa',
+    })
+    .expect(200);
+
+  await request(app)
+    .delete(`/api/transactions/${partnerTx.body.id}`)
+    .set(partnerAuth)
+    .expect(204);
+
+  await request(app)
+    .delete(`/api/transactions/${ownerTx.body.id}`)
+    .set(ownerAuth)
+    .expect(204);
+
+  const fundData = await request(app).get('/api/fund').set(ownerAuth).expect(200);
+  const defaultPocket = fundData.body.pockets[0];
+  const ownerUser = updatedFamily.body.members.find((m) => m.email === 'owner@example.com');
+
+  const contributionBatch = await request(app)
+    .post('/api/fund/contributions')
+    .set(ownerAuth)
+    .send({
+      pocketId: defaultPocket.id,
+      contributionDate: '2026-08-10',
+      note: 'Nạp quỹ test',
+      contributions: [{ userId: ownerUser.id, amount: 500000 }],
+    })
+    .expect(201);
+  const contributionId = contributionBatch.body.contributionIds[0];
+
+  await request(app)
+    .patch(`/api/fund/contributions/${contributionId}`)
+    .set(partnerAuth)
+    .send({ amount: 600000 })
+    .expect(403);
+
+  await request(app)
+    .delete(`/api/fund/contributions/${contributionId}`)
+    .set(partnerAuth)
+    .expect(403);
+
+  await request(app)
+    .delete(`/api/fund/contributions/${contributionId}`)
+    .set(ownerAuth)
+    .expect(204);
 });
 
 test('profile, family settings, member removal and account deletion work', async () => {

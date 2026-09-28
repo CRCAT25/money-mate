@@ -79,6 +79,11 @@ export default function TransactionForm() {
     const endpoint = contributionId ? `/fund/contributions/${contributionId}` : `/transactions/${transactionId}`;
     api.get(endpoint).then(({ data }) => {
       if (contributionId) {
+        if (!isPersonal && data.contributor?.id && data.contributor.id !== user?.id) {
+          notify('Bạn chỉ có thể chỉnh sửa khoản nạp quỹ của chính mình.', 'error');
+          navigate('/');
+          return;
+        }
         setMode('income');
         setEntryKind('fund');
         setContributionPocket(data.pocket);
@@ -88,12 +93,17 @@ export default function TransactionForm() {
         setForm({ type: 'income', amount: String(data.amount), categoryId: '', transactionDate: data.contributionDate, note: data.note || '', paidFromFund: false, fundPocketId: data.pocket.id });
         return;
       }
+      if (!isPersonal && data.assignedTo?.id && data.assignedTo.id !== user?.id && data.createdBy !== user?.id) {
+        notify('Bạn chỉ có thể chỉnh sửa giao dịch của chính mình.', 'error');
+        navigate('/');
+        return;
+      }
       setMode(data.type);
       setEntryKind(data.type === 'expense' && data.paidFromFund ? 'fund' : 'regular');
       setKeypadExpression(String(data.amount));
       setForm({ type: data.type, amount: String(data.amount), categoryId: data.category.id, transactionDate: data.transactionDate, note: data.note || '', paidFromFund: data.paidFromFund || false, fundPocketId: data.fundPocket?.id || '' });
     }).catch((error) => { notify(errorMessage(error), 'error'); navigate('/'); }).finally(() => setLoading(false));
-  }, [contributionId, transactionId, navigate, notify]);
+  }, [contributionId, transactionId, navigate, notify, isPersonal, user?.id]);
 
   useEffect(() => {
     if (form.categoryId && !filteredCategories.some((item) => item.id === form.categoryId)) {

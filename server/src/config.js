@@ -18,7 +18,7 @@ export const config = {
     process.env.DATABASE_PATH || path.resolve(currentDir, '../data/moneymate.db'),
   accessSecret: process.env.JWT_ACCESS_SECRET || 'dev-access-secret-change-me',
   refreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret-change-me',
-  accessTtl: process.env.ACCESS_TOKEN_TTL || '15m',
+  accessTtl: process.env.ACCESS_TOKEN_TTL || '7d',
   refreshTtl: process.env.REFRESH_TOKEN_TTL || '30d',
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY || '',
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || '',
