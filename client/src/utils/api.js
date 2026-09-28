@@ -18,7 +18,9 @@ function isTokenExpired(token) {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return true;
-    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+    const payload = JSON.parse(atob(padded));
     return payload.exp ? Date.now() >= payload.exp * 1000 - 30000 : false;
   } catch {
     return false;
@@ -31,7 +33,7 @@ api.interceptors.request.use(async (request) => {
 
   if (refreshToken && isTokenExpired(token) && !request.url?.includes('/auth/refresh')) {
     refreshPromise ||= axios
-      .post(`${api.defaults.baseURL}/auth/refresh`, { refreshToken })
+      .post(`${api.defaults.baseURL}/auth/refresh`, { refreshToken }, { timeout: 10000 })
       .then(({ data }) => {
         sessionStorage.set(data);
         return data.accessToken;

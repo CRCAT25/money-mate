@@ -25,7 +25,8 @@ export function getDb() {
     database = new SqliteAdapter(sqlite);
   }
 
-  database.ready = migrate(database);
+  const migrationDb = database.kind === 'postgres' ? new PostgresAdapter(database.sql, false, true) : database;
+  database.ready = migrate(migrationDb);
   return database;
 }
 
@@ -77,10 +78,11 @@ class SqliteAdapter {
 }
 
 class PostgresAdapter {
-  constructor(sql, inTransaction = false) {
+  constructor(sql, inTransaction = false, isMigration = false) {
     this.sql = sql;
     this.kind = 'postgres';
     this.inTransaction = inTransaction;
+    this.isMigration = isMigration;
     this.ready = Promise.resolve();
   }
 
@@ -88,16 +90,16 @@ class PostgresAdapter {
     const query = postgresQuery(source);
     return {
       get: async (...args) => {
-        await this.ready;
+        if (!this.isMigration) await this.ready;
         const rows = await this.sql.unsafe(query, args);
         return rows[0];
       },
       all: async (...args) => {
-        await this.ready;
+        if (!this.isMigration) await this.ready;
         return this.sql.unsafe(query, args);
       },
       run: async (...args) => {
-        await this.ready;
+        if (!this.isMigration) await this.ready;
         const result = await this.sql.unsafe(query, args);
         return { changes: Number(result.count || 0) };
       },
@@ -105,16 +107,16 @@ class PostgresAdapter {
   }
 
   async exec(source) {
-    await this.ready;
+    if (!this.isMigration) await this.ready;
     const statements = source.split(';').map((statement) => statement.trim()).filter(Boolean);
     for (const statement of statements) await this.sql.unsafe(postgresQuery(statement));
   }
 
   async transaction(callback) {
-    await this.ready;
+    if (!this.isMigration) await this.ready;
     if (this.inTransaction) return callback(this);
     return this.sql.begin(async (transactionSql) => {
-      const transaction = new PostgresAdapter(transactionSql, true);
+      const transaction = new PostgresAdapter(transactionSql, true, this.isMigration);
       return callback(transaction);
     });
   }
@@ -604,7 +606,7 @@ async function ensureFundContributionColumns(db) {
 
 async function backfillFundPockets(db) {
   const { ensureDefaultFundPocket, ensureExpenseFundPockets } = await import('./fund.js');
-  const migrationDb = db.kind === 'postgres' ? new PostgresAdapter(db.sql) : db;
+  const migrationDb = db.kind === 'postgres' ? new PostgresAdapter(db.sql, false, true) : db;
   const families = await migrationDb.prepare("SELECT id FROM families WHERE space_type = 'family'").all();
   for (const family of families) {
     const pocket = await ensureDefaultFundPocket(migrationDb, family.id);
@@ -620,7 +622,7 @@ async function backfillPersonalSpaces(db) {
   const { ensurePersonalSpace } = await import('./spaces.js');
   // PostgreSQL queries normally wait for migration readiness. Use a migration-local
   // adapter here so the backfill does not wait on the migration that is running it.
-  const migrationDb = db.kind === 'postgres' ? new PostgresAdapter(db.sql) : db;
+  const migrationDb = db.kind === 'postgres' ? new PostgresAdapter(db.sql, false, true) : db;
   const users = await migrationDb.prepare('SELECT id FROM users').all();
   for (const user of users) await ensurePersonalSpace(migrationDb, user.id);
 }
