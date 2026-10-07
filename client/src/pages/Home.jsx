@@ -13,6 +13,7 @@ import api, { errorMessage } from '../utils/api.js';
 import { currentMonth, formatMoney } from '../utils/formatters.js';
 import { visibleFundPockets } from '../utils/fund.js';
 import { homeCacheStorage } from '../utils/storage.js';
+import PendingBankBanner from '../components/PendingBankBanner.jsx';
 
 const weekDays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
@@ -176,6 +177,14 @@ export default function Home() {
       <div className="fixed inset-x-0 top-[env(safe-area-inset-top)] z-30 flex h-12 items-center bg-cream/90 px-4 backdrop-blur-xl sm:px-7 lg:static lg:h-auto lg:bg-transparent lg:px-0 lg:backdrop-blur-none">
         <MonthPicker value={month} onChange={(nextMonth) => { setMonth(nextMonth); setSelectedDates([]); }} dense fullWidth variant="budget" />
       </div>
+
+      <PendingBankBanner
+        currency={family?.currency}
+        onResolved={() => {
+          touch();
+          void prefetchPages(month);
+        }}
+      />
 
       <section className="overflow-hidden rounded-[18px] border border-ink/[0.07] bg-paper/90 shadow-card">
         {!isPersonal && showRecentTransactions && <div className="border-b border-ink/[0.07] bg-white/38 p-1.5"><HomeContentTabs value={contentView} onChange={setContentView} /></div>}

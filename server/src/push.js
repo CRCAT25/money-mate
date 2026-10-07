@@ -37,6 +37,33 @@ export async function sendTransactionPush(db, transaction) {
     transactionId: transaction.transactionId,
   });
 
+  await deliver(db, subscriptions, payload);
+}
+
+export async function sendPendingBankPush(db, pending) {
+  if (!ensureConfigured()) return;
+
+  const subscriptions = await db.prepare(`
+    SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?
+  `).all(pending.userId);
+  if (!subscriptions.length) return;
+
+  const merchant = pending.content ? ` · ${String(pending.content).slice(0, 60)}` : '';
+  const payload = JSON.stringify({
+    type: 'bank-pending',
+    title: `Bạn vừa chi ${formatMoney(pending.amount, pending.currency)}`,
+    body: `Khoản này thuộc danh mục nào?${merchant}`,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    tag: `bank-pending-${pending.id}`,
+    url: `/?spaceId=${encodeURIComponent(pending.spaceId)}&pending=${encodeURIComponent(pending.id)}`,
+    spaceId: pending.spaceId,
+    pendingId: pending.id,
+  });
+  await deliver(db, subscriptions, payload);
+}
+
+async function deliver(db, subscriptions, payload) {
   const results = await Promise.allSettled(subscriptions.map((subscription) => webpush.sendNotification({
     endpoint: subscription.endpoint,
     keys: { p256dh: subscription.p256dh, auth: subscription.auth },

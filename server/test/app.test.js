@@ -1221,3 +1221,110 @@ test('monthly income plans track planned and received amounts and support batch 
   assert.equal(currentSpace.showIncomePlan, true);
 });
 
+
+test('SePay webhook creates pending bank expenses that the owner can categorize', async () => {
+  const registration = await request(app).post('/api/auth/register').send({
+    displayName: 'Chủ tài khoản', email: 'bank-owner@example.com',
+    password: 'BankOwner123!', mode: 'personal',
+  }).expect(201);
+  const verifyToken = new URL(registration.body.previewVerificationUrl).searchParams.get('token');
+  await request(app).post('/api/auth/verify-email').send({ token: verifyToken }).expect(200);
+  const login = await request(app).post('/api/auth/login')
+    .send({ email: 'bank-owner@example.com', password: 'BankOwner123!' }).expect(200);
+  const auth = { Authorization: `Bearer ${login.body.accessToken}` };
+  const personal = login.body.spaces.find((space) => space.type === 'personal');
+
+  const created = await request(app).post('/api/bank/connections').set(auth).send({
+    bankName: 'Techcombank', accountNumber: '1903 4567 8901', spaceId: personal.id,
+  }).expect(201);
+  assert.match(created.body.apiKey, /^mm_/);
+  assert.match(created.body.webhookUrl, /\/api\/bank\/webhook$/);
+  assert.equal(created.body.connection.accountNumber, '190345678901');
+  await request(app).post('/api/bank/connections').set(auth).send({
+    bankName: 'Techcombank', accountNumber: '190345678901', spaceId: personal.id,
+  }).expect(409);
+
+  const webhook = (headers, payload) => request(app).post('/api/bank/webhook').set(headers).send(payload);
+  const keyHeader = { Authorization: `Apikey ${created.body.apiKey}` };
+  const outgoing = {
+    id: 777001,
+    gateway: 'Techcombank',
+    transactionDate: '2026-10-07 08:15:00',
+    accountNumber: '190345678901',
+    content: 'HIGHLANDS COFFEE VINCOM thanh toan QR',
+    transferType: 'out',
+    transferAmount: 55000,
+    referenceCode: 'FT26280001',
+  };
+
+  await webhook({ Authorization: 'Apikey wrong-key' }, outgoing).expect(401);
+  await webhook({}, outgoing).expect(401);
+
+  const first = await webhook(keyHeader, outgoing).expect(200);
+  assert.equal(first.body.success, true);
+  assert.ok(first.body.id);
+  const retry = await webhook(keyHeader, outgoing).expect(200);
+  assert.equal(retry.body.duplicate, true);
+
+  const incoming = await webhook(keyHeader, { ...outgoing, id: 777002, transferType: 'in' }).expect(200);
+  assert.equal(incoming.body.ignored, 'not_outgoing');
+  const otherAccount = await webhook(keyHeader, { ...outgoing, id: 777003, accountNumber: '999999999' }).expect(200);
+  assert.equal(otherAccount.body.ignored, 'account_mismatch');
+
+  const pending = await request(app).get('/api/bank/pending').set(auth).expect(200);
+  assert.equal(pending.body.pending.length, 1);
+  const item = pending.body.pending[0];
+  assert.equal(item.amount, 55000);
+  assert.equal(item.transactionAt, '2026-10-07T08:15:00+07:00');
+  assert.equal(item.suggestedCategory?.name, 'Ăn uống');
+
+  // Another user cannot see or categorize this pending item.
+  const intruderRegistration = await request(app).post('/api/auth/register').send({
+    displayName: 'Người lạ', email: 'bank-intruder@example.com',
+    password: 'BankIntruder123!', mode: 'personal',
+  }).expect(201);
+  const intruderVerify = new URL(intruderRegistration.body.previewVerificationUrl).searchParams.get('token');
+  await request(app).post('/api/auth/verify-email').send({ token: intruderVerify }).expect(200);
+  const intruder = await request(app).post('/api/auth/login')
+    .send({ email: 'bank-intruder@example.com', password: 'BankIntruder123!' }).expect(200);
+  const intruderAuth = { Authorization: `Bearer ${intruder.body.accessToken}` };
+  const intruderPending = await request(app).get('/api/bank/pending').set(intruderAuth).expect(200);
+  assert.equal(intruderPending.body.pending.length, 0);
+  await request(app).post(`/api/bank/pending/${item.id}/categorize`).set(intruderAuth)
+    .send({ categoryId: item.suggestedCategory.id }).expect(404);
+
+  // Pick a different category than suggested so the learned rule overrides the built-in keyword.
+  const categories = await request(app).get('/api/categories')
+    .set({ ...auth, 'X-MoneyMate-Space-Id': personal.id }).expect(200);
+  const entertainment = categories.body.find((category) => category.name === 'Giải trí' && category.type === 'expense');
+  const salary = categories.body.find((category) => category.type === 'income');
+  await request(app).post(`/api/bank/pending/${item.id}/categorize`).set(auth)
+    .send({ categoryId: salary.id }).expect(422);
+  const categorized = await request(app).post(`/api/bank/pending/${item.id}/categorize`).set(auth)
+    .send({ categoryId: entertainment.id }).expect(201);
+  await request(app).post(`/api/bank/pending/${item.id}/categorize`).set(auth)
+    .send({ categoryId: entertainment.id }).expect(409);
+
+  const transaction = await request(app).get(`/api/transactions/${categorized.body.id}`)
+    .set({ ...auth, 'X-MoneyMate-Space-Id': personal.id }).expect(200);
+  assert.equal(transaction.body.amount, 55000);
+  assert.equal(transaction.body.type, 'expense');
+  assert.equal(transaction.body.transactionDate, '2026-10-07');
+  assert.equal(transaction.body.category.id, entertainment.id);
+  assert.match(transaction.body.note, /HIGHLANDS/);
+
+  await webhook(keyHeader, { ...outgoing, id: 777004, content: 'HIGHLANDS COFFEE NGUYEN HUE' }).expect(200);
+  const learned = await request(app).get('/api/bank/pending').set(auth).expect(200);
+  assert.equal(learned.body.pending.length, 1);
+  assert.equal(learned.body.pending[0].suggestedCategory?.id, entertainment.id);
+
+  await request(app).post(`/api/bank/pending/${learned.body.pending[0].id}/ignore`).set(auth).expect(200);
+  const afterIgnore = await request(app).get('/api/bank/pending').set(auth).expect(200);
+  assert.equal(afterIgnore.body.pending.length, 0);
+
+  const connections = await request(app).get('/api/bank/connections').set(auth).expect(200);
+  assert.equal(connections.body.connections.length, 1);
+  assert.ok(connections.body.connections[0].lastEventAt);
+  await request(app).delete(`/api/bank/connections/${created.body.connection.id}`).set(auth).expect(204);
+  await webhook(keyHeader, { ...outgoing, id: 777005 }).expect(401);
+});

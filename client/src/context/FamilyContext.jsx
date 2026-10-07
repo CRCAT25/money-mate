@@ -162,6 +162,9 @@ export function FamilyProvider({ children }) {
       socket.on('shopping:changed', syncChanged);
       socket.on('family:changed', syncChanged);
       socket.on('space:changed', syncChanged);
+      socket.on('bank:pending', () => {
+        window.dispatchEvent(new CustomEvent('moneymate:bank-pending'));
+      });
       return () => socket.disconnect();
     }
 
@@ -173,6 +176,9 @@ export function FamilyProvider({ children }) {
     const handlePush = (event) => {
       const payload = event.detail;
       notify(payload.body || 'Gia đình vừa có khoản chi mới.');
+      if (payload?.type === 'bank-pending') {
+        window.dispatchEvent(new CustomEvent('moneymate:bank-pending', { detail: payload }));
+      }
       if (payload?.spaceId !== activeSpaceId) return;
       checkForChanges(true).catch(() => {});
     };

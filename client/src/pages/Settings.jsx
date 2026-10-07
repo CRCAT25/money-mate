@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { BellRing, Copy, ExternalLink, Grid2X2, ImagePlus, KeyRound, LayoutDashboard, LoaderCircle, LogOut, RefreshCw, Save, Shield, Trash2, UserMinus, UserPlus, Users, X } from 'lucide-react';
+import { BellRing, Check, Copy, ExternalLink, Grid2X2, ImagePlus, KeyRound, Landmark, LayoutDashboard, LoaderCircle, LogOut, Plus, RefreshCw, Save, Shield, Trash2, UserMinus, UserPlus, Users, X } from 'lucide-react';
 import Avatar from '../components/ui/Avatar.jsx';
 import ConfirmModal from '../components/ui/ConfirmModal.jsx';
 import Modal from '../components/ui/Modal.jsx';
@@ -29,10 +29,34 @@ export default function Settings() {
   const [homePreferences, setHomePreferences] = useState({ showRecentTransactions: true, showSpendingPlan: true, showIncomePlan: true, showFundPlan: true, showShoppingPlan: true });
   const [geminiStatus, setGeminiStatus] = useState({ loading: true, configured: false, maskedKey: '', model: 'gemini-3.5-flash' });
   const [geminiKey, setGeminiKey] = useState('');
+  const [bankConnections, setBankConnections] = useState([]);
+  const [bankWebhookUrl, setBankWebhookUrl] = useState('');
+  const [bankLoading, setBankLoading] = useState(true);
+  const [bankModalOpen, setBankModalOpen] = useState(false);
+  const [bankForm, setBankForm] = useState({ bankName: 'Techcombank', accountNumber: '', spaceId: '' });
+  const [createdBankKey, setCreatedBankKey] = useState(null);
+  const [copiedKey, setCopiedKey] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
   const avatarInput = useRef(null);
   const familySpace = spaces.find((space) => space.type === 'family');
   const canManageGemini = isPersonal || familyDetails?.role === 'owner';
   const canManageHomePreferences = familyDetails?.role === 'owner';
+
+  const loadBankConnections = useCallback(async () => {
+    try {
+      const { data } = await api.get('/bank/connections');
+      setBankConnections(data.connections || []);
+      setBankWebhookUrl(data.webhookUrl || '');
+    } catch {
+      // ignore
+    } finally {
+      setBankLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBankConnections();
+  }, [loadBankConnections]);
 
   useEffect(() => {
     if (familyDetails) {
@@ -126,6 +150,45 @@ export default function Settings() {
     try { const { data } = await api.patch('/users/me/password', passwords); notify(data.message); await logout(); navigate('/login'); }
     catch (error) { notify(errorMessage(error), 'error'); }
     finally { setSaving(''); }
+  };
+  const handleCreateBankConnection = async (event) => {
+    event.preventDefault();
+    if (!bankForm.accountNumber.trim()) return notify('Vui lòng nhập số tài khoản ngân hàng.', 'error');
+    setSaving('bank-create');
+    try {
+      const targetSpaceId = bankForm.spaceId || activeSpace.id;
+      const { data } = await api.post('/bank/connections', {
+        bankName: bankForm.bankName,
+        accountNumber: bankForm.accountNumber,
+        spaceId: targetSpaceId,
+      });
+      setCreatedBankKey({
+        apiKey: data.apiKey,
+        webhookUrl: data.webhookUrl,
+        connection: data.connection,
+      });
+      setBankModalOpen(false);
+      setBankForm({ bankName: 'Techcombank', accountNumber: '', spaceId: '' });
+      await loadBankConnections();
+      notify('Tạo liên kết ngân hàng thành công!');
+    } catch (error) {
+      notify(errorMessage(error), 'error');
+    } finally {
+      setSaving('');
+    }
+  };
+  const handleDeleteBankConnection = async (id) => {
+    setSaving('bank-delete');
+    try {
+      await api.delete(`/bank/connections/${id}`);
+      setConfirmation(null);
+      await loadBankConnections();
+      notify('Đã xóa liên kết ngân hàng.');
+    } catch (error) {
+      notify(errorMessage(error), 'error');
+    } finally {
+      setSaving('');
+    }
   };
   const setupFamily = async (event) => {
     event.preventDefault(); setSaving('family-setup');
@@ -279,6 +342,60 @@ export default function Settings() {
           <p className="mt-3 text-xs leading-5 text-ink/45">MoneyMate chỉ thông báo khoản chi trong Gia đình và không gửi nội dung ghi chú. Người tạo giao dịch sẽ không nhận lại thông báo của chính mình.</p>
         </SettingsCard>
 
+        <SettingsCard eyebrow="Tự động" title="Liên kết ngân hàng (SePay)" icon={Landmark}>
+          <p className="text-sm leading-6 text-ink/52">
+            Tự động ghi nhận khi bạn quét QR thanh toán qua Techcombank (hoặc ngân hàng khác). SePay bắn webhook báo tiền ra và MoneyMate sẽ gửi thông báo hỏi khoản đó thuộc mục nào.
+          </p>
+
+          <div className="mt-4 space-y-2.5">
+            {bankLoading ? (
+              <Skeleton className="h-16 rounded-[14px]" />
+            ) : bankConnections.length > 0 ? (
+              bankConnections.map((conn) => (
+                <div key={conn.id} className="flex items-center justify-between gap-3 rounded-[14px] border border-ink/[0.06] bg-white/60 p-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-forest/10 text-forest">
+                      <Landmark className="size-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-ink">
+                        {conn.bankName} · {conn.accountMasked}
+                      </div>
+                      <div className="truncate text-xs text-ink/48">
+                        Ghi vào: <span className="font-medium text-forest">{conn.spaceName}</span>
+                        {conn.lastEventAt ? ` · Hoạt động: ${new Date(conn.lastEventAt).toLocaleDateString('vi-VN')}` : ' · Chờ giao dịch đầu tiên'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmation({ type: 'bank-connection', connectionId: conn.id, bankName: conn.bankName })}
+                    className="grid size-8 place-items-center rounded-lg text-ink/40 hover:bg-coral/10 hover:text-coral transition"
+                    title="Xóa liên kết"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-[14px] border border-dashed border-ink/15 bg-white/30 p-4 text-center text-xs text-ink/50">
+                Chưa có tài khoản ngân hàng nào được liên kết.
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setBankForm({ bankName: 'Techcombank', accountNumber: '', spaceId: activeSpace.id });
+                setBankModalOpen(true);
+              }}
+              className="secondary-button w-full mt-2"
+            >
+              <Plus className="size-4" /> Thêm tài khoản ngân hàng
+            </button>
+          </div>
+        </SettingsCard>
+
         {isPersonal ? (
           <SettingsCard eyebrow="Kết nối" title="Không gian gia đình" icon={Users}>
             {familySpace ? <div className="rounded-[15px] bg-mint/45 p-3.5"><p className="text-sm font-medium text-ink">{familySpace.name}</p><p className="mt-1 text-xs leading-5 text-ink/48">Bạn đang kết nối với một gia đình. Thông tin và dữ liệu gia đình chỉ hiển thị khi chuyển sang không gian đó.</p><button className="secondary-button mt-4" onClick={() => selectSpace(familySpace.id)}>Chuyển sang Gia đình</button></div> : <div><p className="text-sm leading-6 text-ink/50">Tạo một không gian mới hoặc dùng mã mời để theo dõi tài chính chung cùng người thân.</p><button className="primary-button mt-4" onClick={() => setFamilySetupOpen(true)}><UserPlus className="size-4" /> Kết nối gia đình</button></div>}
@@ -300,14 +417,141 @@ export default function Settings() {
 
       <Modal open={familySetupOpen} title="Kết nối gia đình" onClose={() => setFamilySetupOpen(false)} compact><form onSubmit={setupFamily} className="space-y-4"><div className="grid grid-cols-2 rounded-xl bg-ink/[0.05] p-1"><button type="button" className={`min-h-10 rounded-lg text-xs font-medium ${familySetup.mode === 'create' ? 'bg-white text-ink shadow-sm' : 'text-ink/45'}`} onClick={() => setFamilySetup({ ...familySetup, mode: 'create' })}>Tạo gia đình</button><button type="button" className={`min-h-10 rounded-lg text-xs font-medium ${familySetup.mode === 'join' ? 'bg-white text-ink shadow-sm' : 'text-ink/45'}`} onClick={() => setFamilySetup({ ...familySetup, mode: 'join' })}>Dùng mã mời</button></div>{familySetup.mode === 'create' ? <label className="block"><span className="label">Tên gia đình</span><input className="field" value={familySetup.name} onChange={(e) => setFamilySetup({ ...familySetup, name: e.target.value })} required /></label> : <label className="block"><span className="label">Mã mời</span><input className="field uppercase tracking-[0.16em]" value={familySetup.inviteCode} onChange={(e) => setFamilySetup({ ...familySetup, inviteCode: e.target.value })} required /></label>}<button className="primary-button w-full" disabled={saving === 'family-setup'}>{saving === 'family-setup' && <LoaderCircle className="size-4 animate-spin" />}{familySetup.mode === 'create' ? 'Tạo không gian' : 'Tham gia gia đình'}</button></form></Modal>
 
-      <ConfirmModal open={Boolean(confirmation)} title={confirmationTitle(confirmation)} description={confirmationDescription(confirmation, familyDetails)} confirmLabel={confirmationLabel(confirmation)} loading={saving === 'family-action' || saving === 'delete-account' || saving === 'gemini-remove'} tone={confirmation?.type === 'transfer' ? 'warning' : 'danger'} onClose={() => setConfirmation(null)} onConfirm={() => { if (confirmation?.type === 'member') return removeMember(confirmation.member); if (confirmation?.type === 'transfer') return transferOwner(confirmation.member); if (confirmation?.type === 'leave') return leaveFamily(); if (confirmation?.type === 'dissolve') return dissolveFamily(); if (confirmation?.type === 'gemini') return removeGemini(); return deleteAccount(); }} />
+      <Modal open={bankModalOpen} title="Liên kết ngân hàng" onClose={() => setBankModalOpen(false)} compact>
+        <form onSubmit={handleCreateBankConnection} className="space-y-4">
+          <label className="block">
+            <span className="label">Ngân hàng</span>
+            <select
+              className="field"
+              value={bankForm.bankName}
+              onChange={(e) => setBankForm({ ...bankForm, bankName: e.target.value })}
+            >
+              <option value="Techcombank">Techcombank (Khuyên dùng)</option>
+              <option value="Vietcombank">Vietcombank</option>
+              <option value="MBBank">MB Bank</option>
+              <option value="ACB">ACB</option>
+              <option value="VPBank">VPBank</option>
+              <option value="TPBank">TPBank</option>
+              <option value="Khác">Ngân hàng khác</option>
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="label">Số tài khoản ngân hàng</span>
+            <input
+              className="field"
+              type="text"
+              inputMode="numeric"
+              placeholder="Ví dụ: 190345678901"
+              value={bankForm.accountNumber}
+              onChange={(e) => setBankForm({ ...bankForm, accountNumber: e.target.value })}
+              required
+            />
+            <span className="mt-1 block text-[11px] text-ink/45">
+              Số tài khoản trên app ngân hàng của bạn (dùng để khớp khi SePay bắn webhook).
+            </span>
+          </label>
+
+          {spaces.length > 1 && (
+            <label className="block">
+              <span className="label">Ghi chi tiêu mặc định vào</span>
+              <select
+                className="field"
+                value={bankForm.spaceId || activeSpace.id}
+                onChange={(e) => setBankForm({ ...bankForm, spaceId: e.target.value })}
+              >
+                {spaces.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.type === 'personal' ? 'Cá nhân' : s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          <button className="primary-button w-full" disabled={saving === 'bank-create'}>
+            {saving === 'bank-create' && <LoaderCircle className="size-4 animate-spin" />}
+            Tạo liên kết & Lấy Webhook
+          </button>
+        </form>
+      </Modal>
+
+      <Modal open={Boolean(createdBankKey)} title="Cấu hình SePay Webhook" onClose={() => setCreatedBankKey(null)}>
+        <div className="space-y-4 text-xs">
+          <div className="rounded-xl border border-forest/20 bg-mint/30 p-3 text-ink/80 leading-relaxed">
+            🎉 Đã tạo liên kết thành công! Bây giờ bạn chỉ cần vào <strong className="text-forest">my.sepay.vn</strong> để tạo webhook nhận thông báo biến động số dư.
+          </div>
+
+          <div>
+            <label className="label">1. Webhook URL</label>
+            <div className="mt-1 flex items-center gap-2">
+              <input className="field font-mono text-xs" readOnly value={createdBankKey?.webhookUrl || ''} />
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(createdBankKey?.webhookUrl || '');
+                  setCopiedUrl(true);
+                  setTimeout(() => setCopiedUrl(false), 2000);
+                  notify('Đã sao chép Webhook URL.');
+                }}
+                className="grid size-11 shrink-0 place-items-center rounded-xl bg-forest text-white shadow-sm"
+                title="Sao chép URL"
+              >
+                {copiedUrl ? <Check className="size-4" /> : <Copy className="size-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="label">2. API Key (Chứng thực)</label>
+            <div className="mt-1 flex items-center gap-2">
+              <input className="field font-mono text-xs font-bold text-coral" readOnly value={createdBankKey?.apiKey || ''} />
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(createdBankKey?.apiKey || '');
+                  setCopiedKey(true);
+                  setTimeout(() => setCopiedKey(false), 2000);
+                  notify('Đã sao chép API Key.');
+                }}
+                className="grid size-11 shrink-0 place-items-center rounded-xl bg-forest text-white shadow-sm"
+                title="Sao chép API Key"
+              >
+                {copiedKey ? <Check className="size-4" /> : <Copy className="size-4" />}
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] text-coral font-medium">⚠️ Khóa API này chỉ hiển thị 1 lần duy nhất để bảo mật. Hãy lưu lại ngay!</p>
+          </div>
+
+          <div className="rounded-xl bg-ink/[0.04] p-3 text-ink/75 leading-relaxed">
+            <strong className="block text-ink mb-1 font-semibold">Các bước thiết lập trên my.sepay.vn:</strong>
+            <ol className="list-decimal pl-4 space-y-1 text-[11px]">
+              <li>Vào <a href="https://my.sepay.vn" target="_blank" rel="noreferrer" className="text-forest underline">my.sepay.vn</a> $\rightarrow$ chọn menu <strong>Webhooks</strong> $\rightarrow$ bấm <strong>Thêm webhook</strong>.</li>
+              <li><strong>Sự kiện:</strong> Chọn <code>Có tiền ra</code> (hoặc <code>Cả hai</code>).</li>
+              <li><strong>Webhook URL:</strong> Dán link ở mục 1.</li>
+              <li><strong>Bảo mật:</strong> Chọn phương thức <code>API Key</code> và dán khóa ở mục 2.</li>
+              <li>Bấm <strong>Thêm</strong> để hoàn tất.</li>
+            </ol>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setCreatedBankKey(null)}
+            className="primary-button w-full"
+          >
+            Tôi đã cấu hình xong
+          </button>
+        </div>
+      </Modal>
+
+      <ConfirmModal open={Boolean(confirmation)} title={confirmationTitle(confirmation)} description={confirmationDescription(confirmation, familyDetails)} confirmLabel={confirmationLabel(confirmation)} loading={saving === 'family-action' || saving === 'delete-account' || saving === 'gemini-remove' || saving === 'bank-delete'} tone={confirmation?.type === 'transfer' ? 'warning' : 'danger'} onClose={() => setConfirmation(null)} onConfirm={() => { if (confirmation?.type === 'bank-connection') return handleDeleteBankConnection(confirmation.connectionId); if (confirmation?.type === 'member') return removeMember(confirmation.member); if (confirmation?.type === 'transfer') return transferOwner(confirmation.member); if (confirmation?.type === 'leave') return leaveFamily(); if (confirmation?.type === 'dissolve') return dissolveFamily(); if (confirmation?.type === 'gemini') return removeGemini(); return deleteAccount(); }} />
     </div>
   );
 }
 
-function confirmationTitle(item) { if (item?.type === 'member') return 'Xóa thành viên?'; if (item?.type === 'transfer') return 'Chuyển quyền chủ?'; if (item?.type === 'leave') return 'Rời gia đình?'; if (item?.type === 'dissolve') return 'Giải tán gia đình?'; if (item?.type === 'gemini') return 'Xóa Gemini API key?'; return 'Xóa tài khoản?'; }
-function confirmationLabel(item) { if (item?.type === 'member') return 'Xóa thành viên'; if (item?.type === 'transfer') return 'Chuyển quyền'; if (item?.type === 'leave') return 'Rời gia đình'; if (item?.type === 'dissolve') return 'Giải tán'; if (item?.type === 'gemini') return 'Xóa API key'; return 'Xóa tài khoản'; }
-function confirmationDescription(item, details) { if (item?.type === 'member') return `${item.member.displayName} sẽ bị xóa khỏi gia đình. Giao dịch cũ vẫn được giữ.`; if (item?.type === 'transfer') return `${item.member.displayName} sẽ trở thành chủ gia đình mới. Sau đó bạn có thể tự rời gia đình.`; if (item?.type === 'leave') return 'Bạn sẽ mất quyền truy cập dữ liệu gia đình nhưng sổ Cá nhân vẫn được giữ nguyên.'; if (item?.type === 'dissolve') return Number(details?.members?.length) > 1 ? 'Gia đình vẫn còn thành viên. Hãy chuyển quyền chủ thay vì giải tán.' : 'Toàn bộ dữ liệu gia đình sẽ bị xóa vĩnh viễn. Sổ Cá nhân của bạn không bị ảnh hưởng.'; if (item?.type === 'gemini') return 'Không gian sẽ không thể dùng AI ước lượng giá cho đến khi nhập key mới.'; return 'Tài khoản và toàn bộ dữ liệu Cá nhân của bạn sẽ bị xóa vĩnh viễn.'; }
+function confirmationTitle(item) { if (item?.type === 'bank-connection') return 'Hủy liên kết ngân hàng?'; if (item?.type === 'member') return 'Xóa thành viên?'; if (item?.type === 'transfer') return 'Chuyển quyền chủ?'; if (item?.type === 'leave') return 'Rời gia đình?'; if (item?.type === 'dissolve') return 'Giải tán gia đình?'; if (item?.type === 'gemini') return 'Xóa Gemini API key?'; return 'Xóa tài khoản?'; }
+function confirmationLabel(item) { if (item?.type === 'bank-connection') return 'Hủy liên kết'; if (item?.type === 'member') return 'Xóa thành viên'; if (item?.type === 'transfer') return 'Chuyển quyền'; if (item?.type === 'leave') return 'Rời gia đình'; if (item?.type === 'dissolve') return 'Giải tán'; if (item?.type === 'gemini') return 'Xóa API key'; return 'Xóa tài khoản'; }
+function confirmationDescription(item, details) { if (item?.type === 'bank-connection') return `Bạn có chắc muốn hủy liên kết tài khoản ${item.bankName}? Các giao dịch chi tiêu đã ghi chép trước đó vẫn được giữ nguyên.`; if (item?.type === 'member') return `${item.member.displayName} sẽ bị xóa khỏi gia đình. Giao dịch cũ vẫn được giữ.`; if (item?.type === 'transfer') return `${item.member.displayName} sẽ trở thành chủ gia đình mới. Sau đó bạn có thể tự rời gia đình.`; if (item?.type === 'leave') return 'Bạn sẽ mất quyền truy cập dữ liệu gia đình nhưng sổ Cá nhân vẫn được giữ nguyên.'; if (item?.type === 'dissolve') return Number(details?.members?.length) > 1 ? 'Gia đình vẫn còn thành viên. Hãy chuyển quyền chủ thay vì giải tán.' : 'Toàn bộ dữ liệu gia đình sẽ bị xóa vĩnh viễn. Sổ Cá nhân của bạn không bị ảnh hưởng.'; if (item?.type === 'gemini') return 'Không gian sẽ không thể dùng AI ước lượng giá cho đến khi nhập key mới.'; return 'Tài khoản và toàn bộ dữ liệu Cá nhân của bạn sẽ bị xóa vĩnh viễn.'; }
 
 function SettingsPageSkeleton() { return <div aria-label="Đang tải cài đặt" className="space-y-5" role="status"><Skeleton className="h-10 w-52 rounded-xl" /><div className="grid gap-4 xl:grid-cols-2">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-72 rounded-[18px]" />)}</div></div>; }
 function SettingsCard({ eyebrow, title, icon: Icon, children }) { return <section className="min-w-0 rounded-[18px] border border-ink/[0.06] bg-paper/85 p-4 shadow-card sm:p-5"><div className="mb-5 flex min-w-0 items-start justify-between"><div className="min-w-0"><p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.13em] text-ink/48">{eyebrow}</p><h2 className="font-editorial text-[21px] font-semibold text-ink">{title}</h2></div><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-mint text-forest"><Icon className="size-[18px]" /></span></div>{children}</section>; }

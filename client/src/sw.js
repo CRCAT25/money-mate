@@ -24,7 +24,7 @@ self.addEventListener('push', (event) => {
       badge: payload.badge || '/icon-192.png',
       tag: payload.tag,
       renotify: true,
-      data: { url: payload.url || '/', spaceId: payload.spaceId, transactionId: payload.transactionId },
+      data: { url: payload.url || '/', ...payload },
     });
   })());
 });

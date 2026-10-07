@@ -133,9 +133,10 @@ function postgresQuery(source) {
     .replace(/\?/g, () => `$${++index}`);
 }
 
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 
 async function migrate(db) {
+  let applied;
   if (db.kind === 'postgres') {
     await db.sql.unsafe(`
       CREATE TABLE IF NOT EXISTS schema_version (
@@ -143,8 +144,8 @@ async function migrate(db) {
         migrated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    const rows = await db.sql.unsafe('SELECT version FROM schema_version WHERE version = $1', [CURRENT_SCHEMA_VERSION]);
-    if (rows && rows.length > 0) return;
+    const rows = await db.sql.unsafe('SELECT version FROM schema_version');
+    applied = new Set(rows.map((row) => Number(row.version)));
   } else {
     db.sqlite.exec(`
       CREATE TABLE IF NOT EXISTS schema_version (
@@ -152,10 +153,88 @@ async function migrate(db) {
         migrated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    const row = db.sqlite.prepare('SELECT version FROM schema_version WHERE version = ?').get(CURRENT_SCHEMA_VERSION);
-    if (row) return;
+    const rows = db.sqlite.prepare('SELECT version FROM schema_version').all();
+    applied = new Set(rows.map((row) => Number(row.version)));
   }
+  if (applied.has(CURRENT_SCHEMA_VERSION)) return;
 
+  if (!applied.has(1)) {
+    await migrateV1(db);
+    await recordSchemaVersion(db, 1);
+  }
+  if (!applied.has(2)) {
+    await migrateV2(db);
+    await recordSchemaVersion(db, 2);
+  }
+}
+
+async function recordSchemaVersion(db, version) {
+  if (db.kind === 'postgres') {
+    await db.sql.unsafe('INSERT INTO schema_version (version) VALUES ($1) ON CONFLICT (version) DO NOTHING', [version]);
+  } else {
+    db.sqlite.exec(`INSERT OR IGNORE INTO schema_version (version) VALUES (${Number(version)})`);
+  }
+}
+
+// v2: bank account connections (SePay webhooks) and transactions waiting to be categorized.
+async function migrateV2(db) {
+  const amountType = db.kind === 'postgres' ? 'BIGINT' : 'INTEGER';
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS bank_connections (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      family_id TEXT NOT NULL,
+      provider TEXT NOT NULL DEFAULT 'sepay',
+      bank_name TEXT NOT NULL,
+      account_number TEXT NOT NULL,
+      api_key_hash TEXT NOT NULL UNIQUE,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      last_event_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS pending_bank_transactions (
+      id TEXT PRIMARY KEY,
+      connection_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      family_id TEXT NOT NULL,
+      provider_txn_id TEXT NOT NULL,
+      direction TEXT NOT NULL CHECK(direction IN ('out', 'in')),
+      amount ${amountType} NOT NULL CHECK(amount > 0),
+      content TEXT,
+      reference_code TEXT,
+      transaction_at TEXT NOT NULL,
+      suggested_category_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'categorized', 'ignored')),
+      transaction_id TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      resolved_at TEXT,
+      UNIQUE(connection_id, provider_txn_id),
+      FOREIGN KEY (connection_id) REFERENCES bank_connections(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS merchant_category_rules (
+      family_id TEXT NOT NULL,
+      keyword TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      hit_count INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (family_id, keyword),
+      FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bank_connections_user ON bank_connections(user_id);
+    CREATE INDEX IF NOT EXISTS idx_pending_bank_user_status
+      ON pending_bank_transactions(user_id, status, transaction_at DESC);
+  `);
+}
+
+async function migrateV1(db) {
   const amountType = db.kind === 'postgres' ? 'BIGINT' : 'INTEGER';
   await db.exec(`
     CREATE TABLE IF NOT EXISTS families (
@@ -420,12 +499,6 @@ async function migrate(db) {
   await ensureFundContributionColumns(db);
   await backfillFundPockets(db);
   await backfillPersonalSpaces(db);
-
-  if (db.kind === 'postgres') {
-    await db.sql.unsafe('INSERT INTO schema_version (version) VALUES ($1) ON CONFLICT (version) DO NOTHING', [CURRENT_SCHEMA_VERSION]);
-  } else {
-    db.sqlite.exec(`INSERT OR IGNORE INTO schema_version (version) VALUES (${CURRENT_SCHEMA_VERSION})`);
-  }
 }
 
 async function ensureFamilyColumns(db) {
