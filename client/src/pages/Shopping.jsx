@@ -6,7 +6,7 @@ import ConfirmModal from '../components/ui/ConfirmModal.jsx';
 import Modal from '../components/ui/Modal.jsx';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import MoneyInput from '../components/ui/MoneyInput.jsx';
-import Skeleton from '../components/ui/Skeleton.jsx';
+import Skeleton, { ShoppingListSkeleton } from '../components/ui/Skeleton.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -241,8 +241,39 @@ export default function Shopping() {
       </section>
 
       <section className="space-y-2.5">
-        <div className="flex items-center justify-between px-1"><div><h2 className="text-sm font-semibold text-ink">Danh sách tháng này</h2><p className="mt-0.5 text-[11px] text-ink/40">{items.length} món · {formatMoney(expectedTotal, family.currency)} dự kiến</p></div><WalletCards className="size-5 text-ink/28" /></div>
-        {loading ? <div className="space-y-2.5"><Skeleton className="h-36 rounded-[16px]" /><Skeleton className="h-36 rounded-[16px]" /></div> : items.length ? items.map((item, index) => <ShoppingItemCard key={item.id} item={item} index={index} currency={family.currency} refreshing={refreshingId === item.id} applying={applyingId === item.id} onApply={applyBudget} onRefresh={refreshItem} onEdit={openEdit} onDelete={setDeleteTarget} />) : <EmptyShopping />}
+        <div className="flex items-center justify-between px-1">
+          <div>
+            <h2 className="text-sm font-semibold text-ink">Danh sách tháng này</h2>
+            {loading ? (
+              <Skeleton className="mt-1 h-3 w-32" />
+            ) : (
+              <p className="mt-0.5 text-[11px] text-ink/40">
+                {items.length} món · {formatMoney(expectedTotal, family.currency)} dự kiến
+              </p>
+            )}
+          </div>
+          <WalletCards className="size-5 text-ink/28" />
+        </div>
+        {loading ? (
+          <ShoppingListSkeleton count={2} />
+        ) : items.length ? (
+          items.map((item, index) => (
+            <ShoppingItemCard
+              key={item.id}
+              item={item}
+              index={index}
+              currency={family.currency}
+              refreshing={refreshingId === item.id}
+              applying={applyingId === item.id}
+              onApply={applyBudget}
+              onRefresh={refreshItem}
+              onEdit={openEdit}
+              onDelete={setDeleteTarget}
+            />
+          ))
+        ) : (
+          <EmptyShopping />
+        )}
       </section>
 
       <Modal open={Boolean(editingItem)} title="Sửa món mua sắm" onClose={() => { if (!saving) setEditingItem(null); }}>

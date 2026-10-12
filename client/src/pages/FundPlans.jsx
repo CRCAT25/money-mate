@@ -494,8 +494,65 @@ function FundPlanEditor({ pockets, members, currency, values, saving, onChange, 
 function FundPlanSkeleton({ editing }) {
   return (
     <div className="space-y-3" aria-label="Đang tải kế hoạch nạp quỹ" role="status">
-      <Skeleton className="h-[78px] rounded-[16px]" />
-      {Array.from({ length: editing ? 3 : 2 }, (_, index) => <Skeleton key={index} className="h-[138px] rounded-[16px]" />)}
+      <section className="overflow-hidden rounded-[16px] border border-ink/[0.07] bg-[linear-gradient(135deg,rgba(230,242,237,0.9),rgba(255,250,240,0.9))] px-4 py-3 shadow-card sm:px-5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <Skeleton className="size-4 rounded-full" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-3.5 w-20" />
+            <Skeleton className="h-7 w-20 rounded-[8px]" />
+          </div>
+        </div>
+        <div className="mt-3">
+          <Skeleton className="h-2 w-full rounded-full" />
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <Skeleton className="h-3 w-28" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+      </section>
+
+      <section className="space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+        <div className="space-y-2.5">
+          {Array.from({ length: editing ? 3 : 2 }, (_, index) => (
+            <article key={index} className="rounded-[16px] border border-ink/[0.065] bg-paper/90 p-3.5 shadow-card">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <Skeleton className="size-8 shrink-0 rounded-[10px]" />
+                  <Skeleton className="h-4 w-28" />
+                </div>
+                <Skeleton className="h-3.5 w-20" />
+              </div>
+              <div className="mt-2.5">
+                <Skeleton className="h-1.5 w-full rounded-full" />
+              </div>
+              <div className="mt-1.5 flex items-center justify-between">
+                <Skeleton className="h-3 w-36" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+              <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
+                {Array.from({ length: 2 }, (_, mIdx) => (
+                  <div key={mIdx} className="grid min-w-0 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-x-2 rounded-[9px] bg-ink/[0.025] px-2.5 py-2">
+                    <Skeleton className="size-5 rounded-full" />
+                    <Skeleton className="h-3 w-16" />
+                    <Skeleton className="h-3 w-12" />
+                    <div className="col-span-2 col-start-2 mt-1 flex items-center justify-between gap-2">
+                      <Skeleton className="h-2.5 w-16" />
+                      <Skeleton className="h-2.5 w-16" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

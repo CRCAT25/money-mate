@@ -53,3 +53,31 @@ export function ChartSkeleton({ type = 'bar' }) {
     </div>
   );
 }
+
+export function ShoppingListSkeleton({ count = 3 }) {
+  return (
+    <div aria-label="Đang tải danh sách mua sắm" className="space-y-2.5" role="status">
+      {Array.from({ length: count }, (_, index) => (
+        <div key={index} className="rounded-[16px] border border-ink/[0.065] bg-paper/90 p-3.5 shadow-card">
+          <div className="flex items-start gap-3">
+            <Skeleton className="size-10 shrink-0 rounded-[12px]" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton className="h-4 w-32 max-w-[80%]" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+            <div className="flex flex-col items-end space-y-1.5">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-2.5 w-14" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-center justify-end gap-1.5 border-t border-ink/[0.06] pt-2.5">
+            <Skeleton className="size-8 rounded-lg" />
+            <Skeleton className="size-8 rounded-lg" />
+            <Skeleton className="h-8 w-28 rounded-[10px]" />
+            <Skeleton className="size-8 rounded-lg" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

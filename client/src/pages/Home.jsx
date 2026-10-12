@@ -301,6 +301,9 @@ function FundCard({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-bold text-ink sm:text-base">Quỹ chung</h2>
+                {loading && !fundPlanExpanded && (
+                  <Skeleton className="h-4 w-9 rounded-full" />
+                )}
                 {!fundPlanExpanded && monthlyTarget > 0 && !loading && (
                   <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${monthlyRemaining > 0 ? 'bg-coral/10 text-coral' : 'bg-forest/10 text-forest'}`}>
                     {Math.round(monthlyPercentage)}%
@@ -311,6 +314,9 @@ function FundCard({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {loading && !fundPlanExpanded && (
+              <Skeleton className="hidden h-3 w-20 rounded sm:inline-block" />
+            )}
             {!fundPlanExpanded && !loading && monthlyTarget > 0 && (
               <span className="hidden text-[10px] font-medium text-ink/50 sm:inline">
                 Đã góp: {formatMoney(monthlyContributed, currency)}
@@ -327,21 +333,59 @@ function FundCard({
             <div className="rounded-[11px] border border-white/70 bg-white/45 px-2.5 py-2 sm:px-3 sm:py-2.5">
               <div className="flex items-center justify-between gap-3 text-[9px] font-normal text-ink/42 sm:text-[10px]">
                 <span>Tiến độ nạp quỹ</span>
-                <span>{loading ? '...' : `Mục tiêu ${formatMoney(monthlyTarget, currency)}`}</span>
+                {loading ? (
+                  <Skeleton className="h-3 w-28" />
+                ) : (
+                  <span>{`Mục tiêu ${formatMoney(monthlyTarget, currency)}`}</span>
+                )}
               </div>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-ink/[0.08]">
-                <div
-                  className={`h-full rounded-full transition-[width] duration-700 ease-out ${monthlyRemaining > 0 ? 'bg-coral' : 'bg-forest'}`}
-                  style={{ width: `${monthlyPercentage}%` }}
-                />
+                {loading ? (
+                  <Skeleton className="h-full w-full rounded-full" />
+                ) : (
+                  <div
+                    className={`h-full rounded-full transition-[width] duration-700 ease-out ${monthlyRemaining > 0 ? 'bg-coral' : 'bg-forest'}`}
+                    style={{ width: `${monthlyPercentage}%` }}
+                  />
+                )}
               </div>
               <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] font-normal sm:text-[11px]">
-                <span className="text-forest">Đã góp: {loading ? '...' : formatMoney(monthlyContributed, currency)}</span>
-                <span className="text-coral">Còn thiếu: {loading ? '...' : formatMoney(monthlyRemaining, currency)}</span>
+                {loading ? (
+                  <>
+                    <Skeleton className="h-3 w-24" />
+                    <Skeleton className="h-3 w-24" />
+                  </>
+                ) : (
+                  <>
+                    <span className="text-forest">Đã góp: {formatMoney(monthlyContributed, currency)}</span>
+                    <span className="text-coral">Còn thiếu: {formatMoney(monthlyRemaining, currency)}</span>
+                  </>
+                )}
               </div>
             </div>
 
-            {!loading && fundPockets.length > 0 && (
+            {loading ? (
+              <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
+                {[0, 1].map((index) => (
+                  <div key={index} className="rounded-[10px] border border-white/75 bg-white/55 px-2.5 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Skeleton className="size-2.5 rounded-full" />
+                        <Skeleton className="h-3 w-20" />
+                      </div>
+                      <Skeleton className="h-3 w-16" />
+                    </div>
+                    <div className="mt-1.5">
+                      <Skeleton className="h-1 w-full rounded-full" />
+                    </div>
+                    <div className="mt-1.5 flex items-center justify-between">
+                      <Skeleton className="h-2.5 w-16" />
+                      <Skeleton className="h-2.5 w-16" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : fundPockets.length > 0 ? (
               <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
                 {fundPockets.map((pocket) => {
                   const hasTarget = Number(pocket.monthlyTarget || 0) > 0;
@@ -377,9 +421,7 @@ function FundCard({
                   );
                 })}
               </div>
-            )}
-
-            {!loading && !fundPockets.length && (
+            ) : (
               <p className="mt-3 rounded-[10px] border border-white/70 bg-white/45 px-3 py-4 text-center text-[10px] font-normal text-ink/38">
                 Chưa có danh mục nào được thiết lập nạp quỹ trong tháng này.
               </p>
@@ -404,6 +446,9 @@ function FundCard({
               </h2>
             </div>
             <div className="flex items-center gap-2">
+              {loading && !contributionsExpanded && (
+                <Skeleton className="h-3 w-16 rounded" />
+              )}
               {!contributionsExpanded && contributions.length > 0 && !loading && (
                 <span className="text-[11px] font-semibold text-forest">
                   +{formatMoney(totalContributionsAmount, currency)}
@@ -457,6 +502,9 @@ function FundCard({
               </h2>
             </div>
             <div className="flex items-center gap-2">
+              {loading && !expensesExpanded && (
+                <Skeleton className="h-3 w-16 rounded" />
+              )}
               {!expensesExpanded && transactions.length > 0 && !loading && (
                 <span className="text-[11px] font-semibold text-coral">
                   −{formatMoney(totalExpensesAmount, currency)}
