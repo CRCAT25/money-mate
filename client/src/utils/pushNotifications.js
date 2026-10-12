@@ -28,7 +28,7 @@ export async function enablePushNotifications() {
   if (permission !== 'granted') {
     throw new Error(permission === 'denied'
       ? 'Bạn đã chặn thông báo. Hãy cho phép lại trong cài đặt của thiết bị.'
-      : 'Bạn chưa cho phép MoneyMate gửi thông báo.');
+      : 'Bạn chưa cho phép ứng dụng gửi thông báo.');
   }
 
   const registration = await navigator.serviceWorker.ready;

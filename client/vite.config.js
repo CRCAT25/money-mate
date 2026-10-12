@@ -12,9 +12,9 @@ export default defineConfig({
       filename: 'sw.js',
       includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'MoneyMate - Tài chính nhà mình',
-        short_name: 'MoneyMate',
-        description: 'Cùng nhau quản lý tài chính gia đình.',
+        name: 'Quản lý tài chính đa năng',
+        short_name: 'Tài chính đa năng',
+        description: 'Cùng nhau quản lý tài chính cá nhân và gia đình thông minh, đa năng.',
         lang: 'vi',
         start_url: '/',
         scope: '/',

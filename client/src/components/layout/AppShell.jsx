@@ -87,10 +87,10 @@ export default function AppShell({ children }) {
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[224px] flex-col overflow-hidden bg-ink px-4 py-5 text-white lg:flex">
         <div className="absolute -left-20 top-40 size-56 rounded-full bg-forest opacity-30 blur-3xl" />
         <div className="relative mb-8 flex items-center gap-2.5 px-2">
-          <div className="grid size-10 place-items-center rounded-xl bg-sun font-editorial text-xl font-bold text-ink">M</div>
-          <div>
-            <div className="text-base font-extrabold tracking-tight">MoneyMate</div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/45">Tài chính nhà mình</div>
+          <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-sun font-editorial text-xl font-bold text-ink">Q</div>
+          <div className="min-w-0">
+            <div className="text-sm font-extrabold tracking-tight leading-snug">Quản lý tài chính đa năng</div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/45">Tài chính thông minh</div>
           </div>
         </div>
         <nav className="relative flex flex-1 flex-col gap-1">
