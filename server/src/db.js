@@ -11,7 +11,7 @@ export function getDb() {
 
   if (process.env.DATABASE_URL) {
     const sql = postgres(process.env.DATABASE_URL, {
-      max: 5,
+      max: 10,
       idle_timeout: 20,
       connect_timeout: 15,
       prepare: false,

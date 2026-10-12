@@ -231,12 +231,13 @@ export async function getFundTotals(db, familyId, { excludeTransactionId = null,
     contributionWhere.push('fc.fund_pocket_id = ?');
     contributionParams.push(pocketId);
   }
-  const contribution = await db.prepare(`
+  const contributionPromise = db.prepare(`
     SELECT COALESCE(SUM(amount), 0) AS total
     FROM fund_contributions fc
     JOIN fund_pockets fp ON fp.id = fc.fund_pocket_id
     WHERE ${contributionWhere.join(' AND ')}
   `).get(...contributionParams);
+
   const where = ['t.family_id = ?', 'fp.is_archived = 0', "t.type = 'expense'", 't.paid_from_fund = 1'];
   const params = [familyId];
   if (pocketId) {
@@ -247,47 +248,56 @@ export async function getFundTotals(db, familyId, { excludeTransactionId = null,
     where.push('t.id <> ?');
     params.push(excludeTransactionId);
   }
-  const spent = await db.prepare(`
+
+  const spentPromise = db.prepare(`
     SELECT COALESCE(SUM(amount), 0) AS total
     FROM transactions t
     JOIN fund_pockets fp ON fp.id = t.fund_pocket_id
     WHERE ${where.join(' AND ')}
   `).get(...params);
-  let totalTransferredIn = 0;
-  let totalTransferredOut = 0;
-  if (pocketId) {
-    const transferredIn = await db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) AS total
-      FROM fund_pocket_transfers
-      WHERE family_id = ? AND to_pocket_id = ?
-    `).get(familyId, pocketId);
-    const transferredOut = await db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) AS total
-      FROM fund_pocket_transfers
-      WHERE family_id = ? AND from_pocket_id = ?
-    `).get(familyId, pocketId);
-    totalTransferredIn = Number(transferredIn?.total || 0);
-    totalTransferredOut = Number(transferredOut?.total || 0);
-  }
-  let totalSettled = 0;
-  if (pocketId) {
-    const settled = await db.prepare(`
-      SELECT COALESCE(SUM(fsp.amount), 0) AS total
-      FROM fund_settlement_pockets fsp
-      JOIN fund_settlements fs ON fs.id = fsp.settlement_id
-      WHERE fs.family_id = ? AND fsp.pocket_id = ?
-    `).get(familyId, pocketId);
-    totalSettled = Number(settled?.total || 0);
-  } else {
-    const settled = await db.prepare(`
-      SELECT COALESCE(SUM(total_amount), 0) AS total
-      FROM fund_settlements
-      WHERE family_id = ?
-    `).get(familyId);
-    totalSettled = Number(settled?.total || 0);
-  }
+
+  const transferredInPromise = pocketId
+    ? db.prepare(`
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM fund_pocket_transfers
+        WHERE family_id = ? AND to_pocket_id = ?
+      `).get(familyId, pocketId)
+    : Promise.resolve({ total: 0 });
+
+  const transferredOutPromise = pocketId
+    ? db.prepare(`
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM fund_pocket_transfers
+        WHERE family_id = ? AND from_pocket_id = ?
+      `).get(familyId, pocketId)
+    : Promise.resolve({ total: 0 });
+
+  const settledPromise = pocketId
+    ? db.prepare(`
+        SELECT COALESCE(SUM(fsp.amount), 0) AS total
+        FROM fund_settlement_pockets fsp
+        JOIN fund_settlements fs ON fs.id = fsp.settlement_id
+        WHERE fs.family_id = ? AND fsp.pocket_id = ?
+      `).get(familyId, pocketId)
+    : db.prepare(`
+        SELECT COALESCE(SUM(total_amount), 0) AS total
+        FROM fund_settlements
+        WHERE family_id = ?
+      `).get(familyId);
+
+  const [contribution, spent, transferredIn, transferredOut, settled] = await Promise.all([
+    contributionPromise,
+    spentPromise,
+    transferredInPromise,
+    transferredOutPromise,
+    settledPromise,
+  ]);
+
   const totalContributed = Number(contribution?.total || 0);
   const totalSpent = Number(spent?.total || 0);
+  const totalTransferredIn = Number(transferredIn?.total || 0);
+  const totalTransferredOut = Number(transferredOut?.total || 0);
+  const totalSettled = Number(settled?.total || 0);
   return {
     totalContributed,
     totalSpent,

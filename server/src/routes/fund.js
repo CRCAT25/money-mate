@@ -21,9 +21,13 @@ router.get(
   async (req, res) => {
     const db = getDb();
     const month = req.query.month || new Date().toISOString().slice(0, 7);
-    await ensureDefaultFundPocket(db, req.space.id);
-    await syncMissingFundTargetsFromBudgets(db, req.space.id, month);
-    res.json(await buildFundSummary(db, req.space.id, month));
+    let summary = await buildFundSummary(db, req.space.id, month);
+    if (!summary.pockets.length) {
+      await ensureDefaultFundPocket(db, req.space.id);
+      await syncMissingFundTargetsFromBudgets(db, req.space.id, month);
+      summary = await buildFundSummary(db, req.space.id, month);
+    }
+    res.json(summary);
   },
 );
 
@@ -680,9 +684,9 @@ router.delete(
 );
 
 async function buildFundSummary(db, familyId, month) {
-  const totals = await getFundTotals(db, familyId);
   const range = monthRange(month);
-  const [familyRow, members, contributorTotals, pockets, memberTargets, monthlyContributions, contributionRows, dailyActivity, recentTransfers, settlementRows] = await Promise.all([
+  const [totals, familyRow, members, contributorTotals, pockets, memberTargets, monthlyContributions, contributionRows, dailyActivity, recentTransfers, settlementRows] = await Promise.all([
+    getFundTotals(db, familyId),
     db.prepare('SELECT fund_surplus_mode FROM families WHERE id = ?').get(familyId),
     db.prepare(`
       SELECT u.id, u.display_name, u.avatar_url
