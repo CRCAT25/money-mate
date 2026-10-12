@@ -51,6 +51,7 @@ export const sessionStorage = {
     localStorage.removeItem(REFRESH_KEY);
     userStorage.clear();
     homeCacheStorage.clear();
+    pageCacheStorage.clear();
     baseDataStorage.clear();
   },
 };
@@ -63,6 +64,7 @@ export const spaceStorage = {
 };
 
 const HOME_CACHE_PREFIX = 'moneymate.home.';
+const PAGE_CACHE_PREFIX = 'moneymate.page.';
 const BASE_DATA_PREFIX = 'moneymate.base.';
 
 export const homeCacheStorage = {
@@ -85,6 +87,37 @@ export const homeCacheStorage = {
     try {
       Object.keys(localStorage)
         .filter((key) => key.startsWith(HOME_CACHE_PREFIX))
+        .forEach((key) => localStorage.removeItem(key));
+    } catch {}
+  },
+};
+
+export const pageCacheStorage = {
+  get: (spaceId, key) => {
+    if (!spaceId || !key) return null;
+    try {
+      const data = localStorage.getItem(`${PAGE_CACHE_PREFIX}${spaceId}:${key}`);
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  },
+  set: (spaceId, key, data) => {
+    if (!spaceId || !key || !data) return;
+    try {
+      localStorage.setItem(`${PAGE_CACHE_PREFIX}${spaceId}:${key}`, JSON.stringify(data));
+    } catch {}
+  },
+  remove: (spaceId, key) => {
+    if (!spaceId || !key) return;
+    try {
+      localStorage.removeItem(`${PAGE_CACHE_PREFIX}${spaceId}:${key}`);
+    } catch {}
+  },
+  clear: () => {
+    try {
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith(PAGE_CACHE_PREFIX))
         .forEach((key) => localStorage.removeItem(key));
     } catch {}
   },

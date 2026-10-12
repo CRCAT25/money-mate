@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import api, { errorMessage } from '../utils/api.js';
-import { baseDataStorage, sessionStorage } from '../utils/storage.js';
+import { baseDataStorage, pageCacheStorage, sessionStorage } from '../utils/storage.js';
 import { useAuth } from './AuthContext.jsx';
 import { useToast } from './ToastContext.jsx';
 
@@ -54,10 +54,10 @@ export function FamilyProvider({ children }) {
     setCategories(categoriesResponse.data);
     baseDataStorage.setFamily(requestedSpaceId, familyResponse.data);
     baseDataStorage.setCategories(requestedSpaceId, categoriesResponse.data);
-    clearPageCache();
+    invalidatePageCache();
     if (familyResponse.data.revisions) syncState.current = familyResponse.data.revisions;
     setLoading(false);
-  }, [user, activeSpaceId, clearPageCache]);
+  }, [user, activeSpaceId, invalidatePageCache]);
 
   const lastCheckTime = useRef(0);
 
@@ -187,17 +187,27 @@ export function FamilyProvider({ children }) {
   }, [user, activeSpaceId, checkForChanges, notify]);
 
   const scopedKey = useCallback((key) => `${activeSpaceId}:${key}`, [activeSpaceId]);
-  const getCache = useCallback((key) => pageCache.current.get(scopedKey(key)), [scopedKey]);
+  const getCache = useCallback((key) => {
+    const memory = pageCache.current.get(scopedKey(key));
+    if (memory) return memory;
+    return pageCacheStorage.get(activeSpaceId, key);
+  }, [scopedKey, activeSpaceId]);
+
   const setCache = useCallback((key, value) => {
     const entry = { ...value, revision: revisionRef.current };
     pageCache.current.set(scopedKey(key), entry);
+    pageCacheStorage.set(activeSpaceId, key, entry);
     return entry;
-  }, [scopedKey]);
+  }, [scopedKey, activeSpaceId]);
+
   const loadCache = useCallback((key, loader) => {
     const keyForSpace = scopedKey(key);
     const currentRevision = revisionRef.current;
-    const cached = pageCache.current.get(keyForSpace);
-    if (cached?.revision === currentRevision) return Promise.resolve(cached);
+    const cached = pageCache.current.get(keyForSpace) || pageCacheStorage.get(activeSpaceId, key);
+    if (cached?.revision === currentRevision) {
+      pageCache.current.set(keyForSpace, cached);
+      return Promise.resolve(cached);
+    }
 
     const requestKey = `${currentRevision}:${keyForSpace}`;
     const pending = pageRequests.current.get(requestKey);
@@ -208,7 +218,10 @@ export function FamilyProvider({ children }) {
       .then(loader)
       .then((value) => {
         const entry = { ...value, revision: currentRevision };
-        if (cacheGeneration.current === generation) pageCache.current.set(keyForSpace, entry);
+        if (cacheGeneration.current === generation) {
+          pageCache.current.set(keyForSpace, entry);
+          pageCacheStorage.set(activeSpaceId, key, entry);
+        }
         return entry;
       })
       .finally(() => {
@@ -216,7 +229,7 @@ export function FamilyProvider({ children }) {
       });
     pageRequests.current.set(requestKey, request);
     return request;
-  }, [revision, scopedKey]);
+  }, [revision, scopedKey, activeSpaceId]);
 
   const loadFund = useCallback((month) => {
     if (activeSpace?.type !== 'family') return Promise.resolve(null);
