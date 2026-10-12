@@ -18,7 +18,7 @@ export default function Settings() {
   const { notify } = useToast();
   const navigate = useNavigate();
   const [profile, setProfile] = useState({ displayName: user.displayName, email: user.email, avatarUrl: user.avatarUrl || '' });
-  const [spaceForm, setSpaceForm] = useState({ name: '', currency: 'VND', language: 'vi' });
+  const [spaceForm, setSpaceForm] = useState({ name: '', currency: 'VND', language: 'vi', fundSurplusMode: 'rollover' });
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '' });
   const [familySetup, setFamilySetup] = useState({ mode: 'create', name: '', inviteCode: '' });
   const [saving, setSaving] = useState('');
@@ -60,7 +60,7 @@ export default function Settings() {
 
   useEffect(() => {
     if (familyDetails) {
-      setSpaceForm({ name: familyDetails.name, currency: familyDetails.currency, language: familyDetails.language });
+      setSpaceForm({ name: familyDetails.name, currency: familyDetails.currency, language: familyDetails.language, fundSurplusMode: familyDetails.fundSurplusMode || 'rollover' });
       setHomePreferences({
         showRecentTransactions: familyDetails.showRecentTransactions !== false,
         showSpendingPlan: familyDetails.showSpendingPlan !== false,
@@ -275,6 +275,63 @@ export default function Settings() {
           <form onSubmit={saveSpace} className="space-y-5">
             {!isPersonal && <label className="block"><span className="label">Tên gia đình</span><input className="field" value={spaceForm.name} onChange={(e) => setSpaceForm({ ...spaceForm, name: e.target.value })} required /></label>}
             <div className="grid gap-4 sm:grid-cols-2"><label className="block"><span className="label">Loại tiền</span><select className="field" value={spaceForm.currency} onChange={(e) => setSpaceForm({ ...spaceForm, currency: e.target.value })}><option>VND</option><option>USD</option><option>EUR</option></select></label><label className="block"><span className="label">Ngôn ngữ</span><select className="field" value={spaceForm.language} onChange={(e) => setSpaceForm({ ...spaceForm, language: e.target.value })}><option value="vi">Tiếng Việt</option><option value="en">English</option></select></label></div>
+            {!isPersonal && (
+              <div className="space-y-2">
+                <span className="label">Xử lý tiền quỹ còn dư cuối tháng</span>
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  <label
+                    className={`flex cursor-pointer flex-col rounded-[13px] border p-3 transition ${
+                      spaceForm.fundSurplusMode === 'rollover'
+                        ? 'border-forest bg-forest/5 shadow-sm'
+                        : 'border-ink/[0.08] bg-white/45 hover:bg-white/70'
+                    } ${!canManageHomePreferences ? 'pointer-events-none opacity-60' : ''}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="fundSurplusMode"
+                        value="rollover"
+                        checked={spaceForm.fundSurplusMode === 'rollover'}
+                        onChange={() => setSpaceForm((prev) => ({ ...prev, fundSurplusMode: 'rollover' }))}
+                        disabled={!canManageHomePreferences}
+                        className="text-forest focus:ring-forest"
+                      />
+                      <span className="text-xs font-semibold text-ink">Tích lũy & Cấn trừ</span>
+                    </div>
+                    <p className="mt-1.5 text-[11px] leading-4 text-ink/55">
+                      Tiền dư tự động chuyển sang tháng sau và cấn trừ đều vào chỉ tiêu nạp quỹ của từng thành viên.
+                    </p>
+                  </label>
+
+                  <label
+                    className={`flex cursor-pointer flex-col rounded-[13px] border p-3 transition ${
+                      spaceForm.fundSurplusMode === 'refund'
+                        ? 'border-forest bg-forest/5 shadow-sm'
+                        : 'border-ink/[0.08] bg-white/45 hover:bg-white/70'
+                    } ${!canManageHomePreferences ? 'pointer-events-none opacity-60' : ''}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="fundSurplusMode"
+                        value="refund"
+                        checked={spaceForm.fundSurplusMode === 'refund'}
+                        onChange={() => setSpaceForm((prev) => ({ ...prev, fundSurplusMode: 'refund' }))}
+                        disabled={!canManageHomePreferences}
+                        className="text-forest focus:ring-forest"
+                      />
+                      <span className="text-xs font-semibold text-ink">Tất toán & Hoàn quỹ</span>
+                    </div>
+                    <p className="mt-1.5 text-[11px] leading-4 text-ink/55">
+                      Cho phép chốt tất toán để chia đều tiền dư hoàn trả về sổ cá nhân, đưa quỹ tháng mới về 0đ.
+                    </p>
+                  </label>
+                </div>
+                {!canManageHomePreferences && (
+                  <p className="text-[11px] text-ink/45">Chỉ chủ gia đình mới có quyền thay đổi chế độ xử lý thặng dư quỹ.</p>
+                )}
+              </div>
+            )}
             <button className="primary-button" disabled={saving === 'space'}>{saving === 'space' ? <LoaderCircle className="size-5 animate-spin" /> : <Save className="size-4" />} Lưu thay đổi</button>
           </form>
         </SettingsCard>

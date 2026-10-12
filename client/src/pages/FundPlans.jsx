@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { ArrowLeftRight, ArrowRight, Check, Landmark, LoaderCircle, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
+import { ArrowLeftRight, ArrowRight, Check, Coins, Landmark, LoaderCircle, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import PlanModeTabs from '../components/plans/PlanModeTabs.jsx';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
 import MoneyInput from '../components/ui/MoneyInput.jsx';
@@ -10,6 +10,7 @@ import ConfirmModal from '../components/ui/ConfirmModal.jsx';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import Skeleton from '../components/ui/Skeleton.jsx';
 import TransferFundModal from '../components/fund/TransferFundModal.jsx';
+import SettleFundModal from '../components/fund/SettleFundModal.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -36,6 +37,13 @@ export default function FundPlans() {
   const [transferOpen, setTransferOpen] = useState(false);
   const [deleteTransferTarget, setDeleteTransferTarget] = useState(null);
   const [deletingTransfer, setDeletingTransfer] = useState(false);
+  const [settleOpen, setSettleOpen] = useState(false);
+  const [deleteSettlementTarget, setDeleteSettlementTarget] = useState(null);
+  const [deletingSettlement, setDeletingSettlement] = useState(false);
+
+  const isOwner = familyDetails?.role === 'owner';
+  const fundSurplusMode = data?.fundSurplusMode || 'rollover';
+  const rolloverOffsetPerMember = data?.rolloverOffsetPerMember || 0;
 
   useEffect(() => {
     if (isPersonal) return undefined;
@@ -166,6 +174,24 @@ export default function FundPlans() {
     }
   };
 
+  const confirmDeleteSettlement = async () => {
+    if (!deleteSettlementTarget || deletingSettlement) return;
+    setDeletingSettlement(true);
+    try {
+      await api.delete(`/fund/settlements/${deleteSettlementTarget.id}`);
+      touch();
+      const entry = await loadFund(month);
+      setData(entry?.data || null);
+      void prefetchPages(month);
+      setDeleteSettlementTarget(null);
+      notify('Đã xóa đợt tất toán quỹ.');
+    } catch (err) {
+      notify(errorMessage(err), 'error');
+    } finally {
+      setDeletingSettlement(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl space-y-3 sm:space-y-4">
       <header className="grid min-h-9 grid-cols-[36px_minmax(0,1fr)_36px] items-center gap-2">
@@ -189,6 +215,32 @@ export default function FundPlans() {
       {!editing && <PlanModeTabs />}
       <MonthPicker value={month} onChange={changeMonth} dense fullWidth variant="budget" />
 
+      {/* Banner nhắc nhở thặng dư khi ở chế độ tất toán & hoàn quỹ */}
+      {!editing && fundSurplusMode === 'refund' && isOwner && (data?.balance || 0) > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-[15px] border border-forest/25 bg-[linear-gradient(135deg,rgba(230,242,237,0.95),rgba(255,250,240,0.95))] p-3.5 shadow-sm sm:px-4">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-forest/15 text-forest">
+              <Coins className="size-[18px]" />
+            </span>
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-ink">
+                Quỹ hiện còn dư {formatMoney(data.balance, family.currency)}
+              </div>
+              <div className="truncate text-[11px] text-ink/60">
+                Chia đều ~{formatMoney(Math.floor(data.balance / (members.length || 1)), family.currency)}/người cho {members.length} thành viên
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSettleOpen(true)}
+            className="flex shrink-0 items-center gap-1.5 rounded-[10px] bg-forest px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-forest/90 active:scale-95"
+          >
+            <Coins className="size-3.5" /> Tất toán ngay
+          </button>
+        </div>
+      )}
+
       {loading || !data ? <FundPlanSkeleton editing={editing} /> : editing ? (
         <FundPlanEditor
           pockets={pockets}
@@ -204,13 +256,28 @@ export default function FundPlans() {
         />
       ) : (
         <>
-          <FundPlanSummary totals={totals} currency={family.currency} onTransfer={() => setTransferOpen(true)} />
+          <FundPlanSummary
+            totals={totals}
+            balance={data?.balance || 0}
+            currency={family.currency}
+            onTransfer={() => setTransferOpen(true)}
+            onSettle={() => setSettleOpen(true)}
+            fundSurplusMode={fundSurplusMode}
+            rolloverOffsetPerMember={rolloverOffsetPerMember}
+            isOwner={isOwner}
+          />
           <FundPlanOverview pockets={pockets} currency={family.currency} onEdit={openEditor} />
           <FundTransfersHistory
             transfers={data?.recentTransfers || []}
             currency={family.currency}
             currentUserId={user?.id}
             onDelete={(t) => setDeleteTransferTarget(t)}
+          />
+          <FundSettlementsHistory
+            settlements={data?.recentSettlements || []}
+            currency={family.currency}
+            isOwner={isOwner}
+            onDelete={(s) => setDeleteSettlementTarget(s)}
           />
         </>
       )}
@@ -244,6 +311,20 @@ export default function FundPlans() {
         }}
       />
 
+      <SettleFundModal
+        open={settleOpen}
+        onClose={() => setSettleOpen(false)}
+        balance={data?.balance || 0}
+        members={members}
+        currency={family.currency}
+        month={month}
+        onSuccess={() => {
+          touch();
+          loadFund(month).then((entry) => setData(entry?.data || null)).catch(() => {});
+          void prefetchPages(month);
+        }}
+      />
+
       <ConfirmModal
         open={Boolean(deleteTransferTarget)}
         title="Xóa giao dịch chuyển quỹ"
@@ -254,11 +335,22 @@ export default function FundPlans() {
         onClose={() => { if (!deletingTransfer) setDeleteTransferTarget(null); }}
         onConfirm={confirmDeleteTransfer}
       />
+
+      <ConfirmModal
+        open={Boolean(deleteSettlementTarget)}
+        title="Xóa đợt tất toán quỹ"
+        description={deleteSettlementTarget ? `Bạn có chắc muốn xóa đợt tất toán tháng ${deleteSettlementTarget.month} (${formatMoney(deleteSettlementTarget.totalAmount, family.currency)})? Tiền hoàn về ví cá nhân sẽ được thu hồi và đưa lại vào quỹ gia đình.` : ''}
+        confirmLabel="Xóa tất toán"
+        tone="danger"
+        loading={deletingSettlement}
+        onClose={() => { if (!deletingSettlement) setDeleteSettlementTarget(null); }}
+        onConfirm={confirmDeleteSettlement}
+      />
     </div>
   );
 }
 
-function FundPlanSummary({ totals, currency, onTransfer }) {
+function FundPlanSummary({ totals, balance = 0, currency, onTransfer, onSettle, fundSurplusMode, rolloverOffsetPerMember, isOwner }) {
   const percentage = totals.target > 0 ? Math.min(100, (totals.contributed / totals.target) * 100) : 0;
   const progressTone = totals.remaining > 0 ? 'bg-coral' : 'bg-forest';
   return (
@@ -267,6 +359,15 @@ function FundPlanSummary({ totals, currency, onTransfer }) {
         <div className="flex items-center gap-2"><Landmark className="size-4 text-forest" /><h2 className="text-sm font-semibold tracking-[-0.015em] text-ink">Tổng cần nạp</h2></div>
         <div className="flex items-center gap-2">
           <span className="shrink-0 whitespace-nowrap text-right text-xs font-medium text-ink/78">{formatMoney(totals.target, currency)}</span>
+          {fundSurplusMode === 'refund' && isOwner && balance > 0 && (
+            <button
+              type="button"
+              onClick={onSettle}
+              className="flex items-center gap-1 rounded-[8px] border border-forest/20 bg-forest text-white px-2.5 py-1 text-[11px] font-medium shadow-sm transition hover:bg-forest/90 active:scale-95"
+            >
+              <Coins className="size-3" /> Tất toán
+            </button>
+          )}
           <button
             type="button"
             onClick={onTransfer}
@@ -279,7 +380,13 @@ function FundPlanSummary({ totals, currency, onTransfer }) {
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink/[0.09]"><span className={`block h-full rounded-full transition-[width] duration-700 ease-out ${progressTone}`} style={{ width: `${percentage}%` }} /></div>
       <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-normal text-ink/38">
         <span>Đã nạp: <strong className="font-normal text-ink/62">{formatMoney(totals.contributed, currency)}</strong></span>
-        <span className="text-right">Còn thiếu: <strong className="font-normal text-coral">{formatMoney(totals.remaining, currency)}</strong></span>
+        {fundSurplusMode === 'rollover' && rolloverOffsetPerMember > 0 ? (
+          <span className="text-right text-forest font-medium">
+            Đã cấn trừ {formatMoney(rolloverOffsetPerMember, currency)}/người từ dư quỹ
+          </span>
+        ) : (
+          <span className="text-right">Còn thiếu: <strong className="font-normal text-coral">{formatMoney(totals.remaining, currency)}</strong></span>
+        )}
       </div>
     </section>
   );
@@ -467,3 +574,53 @@ function FundTransfersHistory({ transfers = [], currency, currentUserId, onDelet
   );
 }
 
+function FundSettlementsHistory({ settlements = [], currency, isOwner, onDelete }) {
+  if (!settlements.length) return null;
+
+  return (
+    <section className="space-y-2 pt-2">
+      <div className="flex items-center justify-between px-1">
+        <h2 className="text-sm font-semibold tracking-[-0.015em] text-ink">Lịch sử tất toán & hoàn quỹ</h2>
+        <span className="text-[10px] font-normal text-ink/35">{settlements.length} đợt tất toán</span>
+      </div>
+      <div className="space-y-2">
+        {settlements.map((s) => (
+          <article key={s.id} className="rounded-[14px] border border-ink/[0.065] bg-paper/90 p-3 shadow-card flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-ink">Tháng {s.month}</span>
+                <span className="rounded-full bg-forest/10 px-2 py-0.5 text-[10px] font-medium text-forest">
+                  Đã hoàn {formatMoney(s.totalAmount, currency)}
+                </span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-ink/45">
+                <span>Chia đều {s.memberCount} người</span>
+                <span>·</span>
+                <span>{s.settledBy?.displayName}</span>
+                <span>·</span>
+                <span>{new Date(s.settledAt).toLocaleDateString('vi-VN')}</span>
+                {s.note && (
+                  <>
+                    <span>·</span>
+                    <span className="italic text-ink/60 truncate max-w-[140px] sm:max-w-[200px]">"{s.note}"</span>
+                  </>
+                )}
+              </div>
+            </div>
+            {isOwner && (
+              <button
+                type="button"
+                onClick={() => onDelete(s)}
+                className="p-1 text-ink/35 hover:text-coral transition active:scale-90 shrink-0"
+                title="Xóa đợt tất toán"
+                aria-label="Xóa đợt tất toán"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}

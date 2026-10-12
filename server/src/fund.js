@@ -269,6 +269,23 @@ export async function getFundTotals(db, familyId, { excludeTransactionId = null,
     totalTransferredIn = Number(transferredIn?.total || 0);
     totalTransferredOut = Number(transferredOut?.total || 0);
   }
+  let totalSettled = 0;
+  if (pocketId) {
+    const settled = await db.prepare(`
+      SELECT COALESCE(SUM(fsp.amount), 0) AS total
+      FROM fund_settlement_pockets fsp
+      JOIN fund_settlements fs ON fs.id = fsp.settlement_id
+      WHERE fs.family_id = ? AND fsp.pocket_id = ?
+    `).get(familyId, pocketId);
+    totalSettled = Number(settled?.total || 0);
+  } else {
+    const settled = await db.prepare(`
+      SELECT COALESCE(SUM(total_amount), 0) AS total
+      FROM fund_settlements
+      WHERE family_id = ?
+    `).get(familyId);
+    totalSettled = Number(settled?.total || 0);
+  }
   const totalContributed = Number(contribution?.total || 0);
   const totalSpent = Number(spent?.total || 0);
   return {
@@ -276,7 +293,8 @@ export async function getFundTotals(db, familyId, { excludeTransactionId = null,
     totalSpent,
     totalTransferredIn,
     totalTransferredOut,
-    balance: totalContributed + totalTransferredIn - totalTransferredOut - totalSpent,
+    totalSettled,
+    balance: totalContributed + totalTransferredIn - totalTransferredOut - totalSpent - totalSettled,
   };
 }
 

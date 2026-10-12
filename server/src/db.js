@@ -133,7 +133,7 @@ function postgresQuery(source) {
     .replace(/\?/g, () => `$${++index}`);
 }
 
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 async function migrate(db) {
   let applied;
@@ -170,6 +170,10 @@ async function migrate(db) {
     await migrateV3(db);
     await recordSchemaVersion(db, 3);
   }
+  if (!applied.has(4)) {
+    await migrateV4(db);
+    await recordSchemaVersion(db, 4);
+  }
 }
 
 async function recordSchemaVersion(db, version) {
@@ -178,6 +182,64 @@ async function recordSchemaVersion(db, version) {
   } else {
     db.sqlite.exec(`INSERT OR IGNORE INTO schema_version (version) VALUES (${Number(version)})`);
   }
+}
+
+// v4: fund surplus mode (rollover vs refund) and fund settlements
+async function migrateV4(db) {
+  const amountType = db.kind === 'postgres' ? 'BIGINT' : 'INTEGER';
+  if (db.kind === 'postgres') {
+    await db.exec(`
+      ALTER TABLE families ADD COLUMN IF NOT EXISTS fund_surplus_mode TEXT NOT NULL DEFAULT 'rollover';
+    `);
+  } else {
+    const tableInfo = db.sqlite.prepare("PRAGMA table_info('families')").all();
+    const hasColumn = tableInfo.some((col) => col.name === 'fund_surplus_mode');
+    if (!hasColumn) {
+      db.sqlite.exec("ALTER TABLE families ADD COLUMN fund_surplus_mode TEXT NOT NULL DEFAULT 'rollover'");
+    }
+  }
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS fund_settlements (
+      id TEXT PRIMARY KEY,
+      family_id TEXT NOT NULL,
+      month TEXT NOT NULL,
+      total_amount ${amountType} NOT NULL CHECK(total_amount > 0),
+      member_count INTEGER NOT NULL CHECK(member_count > 0),
+      settled_by TEXT NOT NULL,
+      note TEXT,
+      settled_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+      FOREIGN KEY (settled_by) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS fund_settlement_items (
+      id TEXT PRIMARY KEY,
+      settlement_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      amount ${amountType} NOT NULL CHECK(amount > 0),
+      personal_transaction_id TEXT,
+      FOREIGN KEY (settlement_id) REFERENCES fund_settlements(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (personal_transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS fund_settlement_pockets (
+      id TEXT PRIMARY KEY,
+      settlement_id TEXT NOT NULL,
+      pocket_id TEXT NOT NULL,
+      amount ${amountType} NOT NULL CHECK(amount > 0),
+      FOREIGN KEY (settlement_id) REFERENCES fund_settlements(id) ON DELETE CASCADE,
+      FOREIGN KEY (pocket_id) REFERENCES fund_pockets(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_fund_settlements_family
+      ON fund_settlements(family_id, month DESC);
+    CREATE INDEX IF NOT EXISTS idx_fund_settlement_items_settlement
+      ON fund_settlement_items(settlement_id);
+    CREATE INDEX IF NOT EXISTS idx_fund_settlement_pockets_pocket
+      ON fund_settlement_pockets(pocket_id);
+  `);
 }
 
 // v3: fund transfers between pockets
@@ -287,6 +349,7 @@ async function migrateV1(db) {
       show_income_plan INTEGER NOT NULL DEFAULT 1,
       show_fund_plan INTEGER NOT NULL DEFAULT 1,
       show_shopping_plan INTEGER NOT NULL DEFAULT 1,
+      fund_surplus_mode TEXT NOT NULL DEFAULT 'rollover',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 

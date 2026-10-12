@@ -792,8 +792,57 @@ test('family fund tracks member contributions and fund-paid expenses independent
   assert.equal(listTransfers.body[0].fromPocket.name, 'Tiền mặt');
   assert.equal(listTransfers.body[0].toPocket.name, 'Tiền nhà');
 
+  // Test fund surplus mode and settlements
+  const fundSummaryBeforeSettle = await request(app).get('/api/fund').set(ownerAuth).expect(200);
+  assert.equal(fundSummaryBeforeSettle.body.fundSurplusMode, 'rollover');
+  assert.equal(fundSummaryBeforeSettle.body.balance, 500000);
+  assert.equal(fundSummaryBeforeSettle.body.rolloverOffsetPerMember, 250000);
+
+  // Partner cannot change space fundSurplusMode
+  await request(app).patch(`/api/spaces/${family.body.id}`).set(partnerAuth).send({
+    name: 'Gia đình kiểm thử quỹ', currency: 'VND', language: 'vi', fundSurplusMode: 'refund',
+  }).expect(403);
+
+  // Owner changes to refund mode
+  await request(app).patch(`/api/spaces/${family.body.id}`).set(ownerAuth).send({
+    name: 'Gia đình kiểm thử quỹ', currency: 'VND', language: 'vi', fundSurplusMode: 'refund',
+  }).expect(200);
+
+  const fundInRefundMode = await request(app).get('/api/fund').set(ownerAuth).expect(200);
+  assert.equal(fundInRefundMode.body.fundSurplusMode, 'refund');
+
+  // Partner cannot settle
+  await request(app).post('/api/fund/settle').set(partnerAuth).send({ month: '2026-08' }).expect(403);
+
+  // Owner settles the remaining 500k between 2 members (250k each)
+  const settleRes = await request(app).post('/api/fund/settle').set(ownerAuth).send({
+    month: '2026-08', note: 'Tất toán tháng 8',
+  }).expect(201);
+  assert.equal(settleRes.body.totalAmount, 500000);
+  assert.ok(settleRes.body.settlementId);
+
+  const fundAfterSettle = await request(app).get('/api/fund').set(ownerAuth).expect(200);
+  assert.equal(fundAfterSettle.body.balance, 0);
+  assert.equal(fundAfterSettle.body.recentSettlements.length, 1);
+  assert.equal(fundAfterSettle.body.recentSettlements[0].totalAmount, 500000);
+  assert.equal(fundAfterSettle.body.recentSettlements[0].memberCount, 2);
+
+  // Checking personal spaces got the refund income transactions
   const personal = ownerLogin.body.spaces.find((space) => space.type === 'personal');
-  const personalAuth = { ...ownerAuth, 'X-MoneyMate-Space-Id': personal.id };
+  const currentMonthStr = new Date().toISOString().slice(0, 7);
+  const personalTxns = await request(app).get(`/api/transactions?month=${currentMonthStr}`).set(personalAuth).expect(200);
+  const refundTxn = personalTxns.body.transactions.find((t) => t.type === 'income' && t.note?.includes('Hoàn tiền dư quỹ'));
+  assert.ok(refundTxn);
+  assert.equal(refundTxn.amount, 250000);
+
+  // Settle again should fail with 422 because balance is 0
+  await request(app).post('/api/fund/settle').set(ownerAuth).send({ month: '2026-08' }).expect(422);
+
+  // Delete settlement restores fund balance
+  await request(app).delete(`/api/fund/settlements/${settleRes.body.settlementId}`).set(ownerAuth).expect(204);
+  const fundAfterDeleteSettle = await request(app).get('/api/fund').set(ownerAuth).expect(200);
+  assert.equal(fundAfterDeleteSettle.body.balance, 500000);
+
   await request(app).get('/api/fund').set(personalAuth).expect(422);
   const personalCategories = await request(app).get('/api/categories').set(personalAuth).expect(200);
   const personalExpense = personalCategories.body.find((category) => category.type === 'expense');

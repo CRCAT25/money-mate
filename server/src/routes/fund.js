@@ -1,11 +1,11 @@
 import express from 'express';
 import { body, param, query } from 'express-validator';
-import { authenticate } from '../auth.js';
+import { authenticate, requireOwner } from '../auth.js';
 import { getDb } from '../db.js';
 import { ensureDefaultFundPocket, ensureExpenseFundPockets, getFundTotals, lockFund, syncMissingFundTargetsFromBudgets } from '../fund.js';
 import { emitFamily } from '../realtime.js';
 import { bumpFamilyRevision } from '../revisions.js';
-import { requireFamilySpace, resolveSpace } from '../spaces.js';
+import { ensurePersonalSpace, requireFamilySpace, resolveSpace } from '../spaces.js';
 import { id, monthRange } from '../utils.js';
 import { validate } from '../validation.js';
 
@@ -481,10 +481,209 @@ router.delete(
   },
 );
 
+router.post(
+  '/settle',
+  requireOwner,
+  [
+    body('month').optional().matches(/^\d{4}-\d{2}$/).withMessage('Tháng không hợp lệ.'),
+    body('note').optional().trim().isLength({ max: 200 }).withMessage('Ghi chú tối đa 200 ký tự.'),
+  ],
+  validate,
+  async (req, res) => {
+    const db = getDb();
+    const targetMonth = req.body.month || new Date().toISOString().slice(0, 7);
+    const result = await db.transaction(async (transaction) => {
+      await lockFund(transaction, req.space.id);
+      const totals = await getFundTotals(transaction, req.space.id);
+      if (totals.balance <= 0) {
+        return { status: 422, message: 'Quỹ hiện không có số dư thặng dư để tất toán.' };
+      }
+
+      const members = await transaction.prepare(`
+        SELECT u.id, u.display_name
+        FROM family_members fm
+        JOIN users u ON u.id = fm.user_id
+        WHERE fm.family_id = ?
+        ORDER BY fm.role DESC, fm.joined_at
+      `).all(req.space.id);
+      if (!members.length) {
+        return { status: 422, message: 'Gia đình chưa có thành viên để hoàn tiền.' };
+      }
+
+      const totalSurplus = totals.balance;
+      const baseRefund = Math.floor(totalSurplus / members.length);
+      const remainder = totalSurplus % members.length;
+
+      const pockets = await transaction.prepare(`
+        SELECT fp.id, fp.name,
+          COALESCE(fc.total, 0) + COALESCE(tin.total, 0) - COALESCE(tout.total, 0) - COALESCE(ft.total, 0) - COALESCE(fsp.total, 0) AS balance
+        FROM fund_pockets fp
+        LEFT JOIN (SELECT fund_pocket_id, SUM(amount) AS total FROM fund_contributions WHERE family_id = ? GROUP BY fund_pocket_id) fc ON fc.fund_pocket_id = fp.id
+        LEFT JOIN (SELECT to_pocket_id, SUM(amount) AS total FROM fund_pocket_transfers WHERE family_id = ? GROUP BY to_pocket_id) tin ON tin.to_pocket_id = fp.id
+        LEFT JOIN (SELECT from_pocket_id, SUM(amount) AS total FROM fund_pocket_transfers WHERE family_id = ? GROUP BY from_pocket_id) tout ON tout.from_pocket_id = fp.id
+        LEFT JOIN (SELECT fund_pocket_id, SUM(amount) AS total FROM transactions WHERE family_id = ? AND type = 'expense' AND paid_from_fund = 1 GROUP BY fund_pocket_id) ft ON ft.fund_pocket_id = fp.id
+        LEFT JOIN (SELECT fsp_in.pocket_id, SUM(fsp_in.amount) AS total FROM fund_settlement_pockets fsp_in JOIN fund_settlements fs_in ON fs_in.id = fsp_in.settlement_id WHERE fs_in.family_id = ? GROUP BY fsp_in.pocket_id) fsp ON fsp.pocket_id = fp.id
+        WHERE fp.family_id = ? AND fp.is_archived = 0
+      `).all(req.space.id, req.space.id, req.space.id, req.space.id, req.space.id, req.space.id);
+
+      let remainingToDeduct = totalSurplus;
+      const pocketAllocations = [];
+      for (const pocket of pockets) {
+        const pocketBalance = Math.max(0, Number(pocket.balance || 0));
+        if (pocketBalance <= 0 || remainingToDeduct <= 0) continue;
+        const deductAmount = Math.min(pocketBalance, remainingToDeduct);
+        pocketAllocations.push({ pocketId: pocket.id, amount: deductAmount });
+        remainingToDeduct -= deductAmount;
+      }
+      if (remainingToDeduct > 0 && pockets.length > 0) {
+        pocketAllocations.push({ pocketId: pockets[0].id, amount: remainingToDeduct });
+      }
+
+      const settlementId = id();
+      await transaction.prepare(`
+        INSERT INTO fund_settlements (id, family_id, month, total_amount, member_count, settled_by, note)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(settlementId, req.space.id, targetMonth, totalSurplus, members.length, req.user.id, req.body.note || 'Tất toán thặng dư quỹ');
+
+      for (const alloc of pocketAllocations) {
+        await transaction.prepare(`
+          INSERT INTO fund_settlement_pockets (id, settlement_id, pocket_id, amount)
+          VALUES (?, ?, ?, ?)
+        `).run(id(), settlementId, alloc.pocketId, alloc.amount);
+      }
+
+      const todayStr = new Date().toISOString().slice(0, 10);
+      for (const [index, member] of members.entries()) {
+        const memberRefund = baseRefund + (index < remainder ? 1 : 0);
+        const personalSpace = await ensurePersonalSpace(transaction, member.id);
+        let personalTxnId = null;
+        if (personalSpace) {
+          personalTxnId = id();
+          const category = await transaction.prepare(`
+            SELECT id, name FROM categories WHERE family_id = ? AND type = 'income' ORDER BY is_default DESC LIMIT 1
+          `).get(personalSpace.id);
+          await transaction.prepare(`
+            INSERT INTO transactions (id, family_id, category_id, category_name, created_by, assigned_to, type, amount, transaction_date, note)
+            VALUES (?, ?, ?, ?, ?, ?, 'income', ?, ?, ?)
+          `).run(personalTxnId, personalSpace.id, category?.id || null, category?.name || 'Thu nhập khác', member.id, member.id, memberRefund, todayStr, `Hoàn tiền dư quỹ tháng ${targetMonth}`);
+          await bumpFamilyRevision(transaction, personalSpace.id, { transactions: true });
+          emitFamily(personalSpace.id, 'transactions:changed', { action: 'fund-refund-received', id: personalTxnId });
+        }
+
+        await transaction.prepare(`
+          INSERT INTO fund_settlement_items (id, settlement_id, user_id, amount, personal_transaction_id)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(id(), settlementId, member.id, memberRefund, personalTxnId);
+      }
+
+      await bumpFamilyRevision(transaction, req.space.id, { transactions: true });
+      return { status: 201, settlementId, totalAmount: totalSurplus, memberCount: members.length };
+    });
+
+    if (result.status !== 201) return res.status(result.status).json({ message: result.message });
+    emitFamily(req.space.id, 'transactions:changed', { action: 'fund-settled', id: result.settlementId });
+    res.status(201).json({
+      message: `Đã tất toán quỹ và chia đều hoàn trả cho ${result.memberCount} thành viên.`,
+      settlementId: result.settlementId,
+      totalAmount: result.totalAmount,
+    });
+  },
+);
+
+router.get('/settlements', async (req, res) => {
+  const db = getDb();
+  const settlements = await db.prepare(`
+    SELECT fs.id, fs.month, fs.total_amount, fs.member_count, fs.note, fs.settled_at,
+      u.id AS settled_by_id, u.display_name AS settled_by_name, u.avatar_url AS settled_by_avatar
+    FROM fund_settlements fs
+    JOIN users u ON u.id = fs.settled_by
+    WHERE fs.family_id = ?
+    ORDER BY fs.settled_at DESC
+    LIMIT 20
+  `).all(req.space.id);
+
+  const settlementIds = settlements.map((s) => s.id);
+  let settlementItems = [];
+  if (settlementIds.length) {
+    const placeholders = settlementIds.map(() => '?').join(', ');
+    settlementItems = await db.prepare(`
+      SELECT fsi.settlement_id, fsi.amount, u.id AS user_id, u.display_name, u.avatar_url
+      FROM fund_settlement_items fsi
+      JOIN users u ON u.id = fsi.user_id
+      WHERE fsi.settlement_id IN (${placeholders})
+    `).all(...settlementIds);
+  }
+  const itemsBySettlement = new Map();
+  for (const item of settlementItems) {
+    const list = itemsBySettlement.get(item.settlement_id) || [];
+    list.push({
+      userId: item.user_id,
+      displayName: item.display_name,
+      avatarUrl: item.avatar_url,
+      amount: Number(item.amount),
+    });
+    itemsBySettlement.set(item.settlement_id, list);
+  }
+
+  res.json({
+    settlements: settlements.map((s) => ({
+      id: s.id,
+      month: s.month,
+      totalAmount: Number(s.total_amount),
+      memberCount: Number(s.member_count),
+      note: s.note,
+      settledAt: s.settled_at,
+      settledBy: { id: s.settled_by_id, displayName: s.settled_by_name, avatarUrl: s.settled_by_avatar },
+      items: itemsBySettlement.get(s.id) || [],
+    })),
+  });
+});
+
+router.delete(
+  '/settlements/:id',
+  requireOwner,
+  [param('id').isUUID().withMessage('Mã đợt tất toán không hợp lệ.')],
+  validate,
+  async (req, res) => {
+    const db = getDb();
+    const result = await db.transaction(async (transaction) => {
+      await lockFund(transaction, req.space.id);
+      const settlement = await transaction.prepare(`
+        SELECT id, family_id, total_amount FROM fund_settlements WHERE id = ? AND family_id = ?
+      `).get(req.params.id, req.space.id);
+      if (!settlement) return { status: 404, message: 'Không tìm thấy đợt tất toán quỹ.' };
+
+      const items = await transaction.prepare(`
+        SELECT personal_transaction_id FROM fund_settlement_items WHERE settlement_id = ?
+      `).all(req.params.id);
+
+      for (const item of items) {
+        if (item.personal_transaction_id) {
+          const txn = await transaction.prepare('SELECT family_id FROM transactions WHERE id = ?').get(item.personal_transaction_id);
+          await transaction.prepare('DELETE FROM transactions WHERE id = ?').run(item.personal_transaction_id);
+          if (txn?.family_id) {
+            await bumpFamilyRevision(transaction, txn.family_id, { transactions: true });
+            emitFamily(txn.family_id, 'transactions:changed', { action: 'fund-refund-cancelled' });
+          }
+        }
+      }
+
+      await transaction.prepare('DELETE FROM fund_settlements WHERE id = ? AND family_id = ?').run(req.params.id, req.space.id);
+      await bumpFamilyRevision(transaction, req.space.id, { transactions: true });
+      return null;
+    });
+
+    if (result) return res.status(result.status).json({ message: result.message });
+    emitFamily(req.space.id, 'transactions:changed', { action: 'fund-settlement-deleted', id: req.params.id });
+    res.status(204).end();
+  },
+);
+
 async function buildFundSummary(db, familyId, month) {
   const totals = await getFundTotals(db, familyId);
   const range = monthRange(month);
-  const [members, contributorTotals, pockets, memberTargets, monthlyContributions, contributionRows, dailyActivity, recentTransfers] = await Promise.all([
+  const [familyRow, members, contributorTotals, pockets, memberTargets, monthlyContributions, contributionRows, dailyActivity, recentTransfers, settlementRows] = await Promise.all([
+    db.prepare('SELECT fund_surplus_mode FROM families WHERE id = ?').get(familyId),
     db.prepare(`
       SELECT u.id, u.display_name, u.avatar_url
       FROM family_members fm
@@ -504,7 +703,8 @@ async function buildFundSummary(db, familyId, month) {
         COALESCE(fc.total_contributed, 0) AS total_contributed,
         COALESCE(ft.total_spent, 0) AS total_spent,
         COALESCE(tin.total_transferred_in, 0) AS total_transferred_in,
-        COALESCE(tout.total_transferred_out, 0) AS total_transferred_out
+        COALESCE(tout.total_transferred_out, 0) AS total_transferred_out,
+        COALESCE(fsp.total_settled, 0) AS total_settled
       FROM fund_pockets fp
       LEFT JOIN (
         SELECT fund_pocket_id, SUM(amount) AS total_contributed
@@ -528,11 +728,18 @@ async function buildFundSummary(db, familyId, month) {
         WHERE family_id = ?
         GROUP BY from_pocket_id
       ) tout ON tout.from_pocket_id = fp.id
+      LEFT JOIN (
+        SELECT fsp_in.pocket_id, SUM(fsp_in.amount) AS total_settled
+        FROM fund_settlement_pockets fsp_in
+        JOIN fund_settlements fs_in ON fs_in.id = fsp_in.settlement_id
+        WHERE fs_in.family_id = ?
+        GROUP BY fsp_in.pocket_id
+      ) fsp ON fsp.pocket_id = fp.id
       LEFT JOIN categories c ON c.id = fp.category_id
       WHERE fp.family_id = ? AND fp.is_archived = 0
       ORDER BY CASE WHEN fp.category_id IS NOT NULL THEN 0 ELSE 1 END,
         LOWER(COALESCE(c.name, fp.name)), fp.is_default DESC, fp.created_at
-    `).all(familyId, familyId, familyId, familyId, familyId),
+    `).all(familyId, familyId, familyId, familyId, familyId, familyId),
     db.prepare(`
       SELECT fmt.pocket_id, fmt.user_id, fmt.target_amount
       FROM fund_pocket_member_targets fmt
@@ -585,7 +792,44 @@ async function buildFundSummary(db, familyId, month) {
       ORDER BY fpt.transfer_date DESC, fpt.created_at DESC
       LIMIT 20
     `).all(familyId),
+    db.prepare(`
+      SELECT fs.id, fs.month, fs.total_amount, fs.member_count, fs.note, fs.settled_at,
+        u.id AS settled_by_id, u.display_name AS settled_by_name, u.avatar_url AS settled_by_avatar
+      FROM fund_settlements fs
+      JOIN users u ON u.id = fs.settled_by
+      WHERE fs.family_id = ?
+      ORDER BY fs.settled_at DESC
+      LIMIT 10
+    `).all(familyId),
   ]);
+
+  const settlementIds = settlementRows.map((s) => s.id);
+  let settlementItems = [];
+  if (settlementIds.length) {
+    const placeholders = settlementIds.map(() => '?').join(', ');
+    settlementItems = await db.prepare(`
+      SELECT fsi.settlement_id, fsi.amount, u.id AS user_id, u.display_name, u.avatar_url
+      FROM fund_settlement_items fsi
+      JOIN users u ON u.id = fsi.user_id
+      WHERE fsi.settlement_id IN (${placeholders})
+    `).all(...settlementIds);
+  }
+  const itemsBySettlement = new Map();
+  for (const item of settlementItems) {
+    const list = itemsBySettlement.get(item.settlement_id) || [];
+    list.push({
+      userId: item.user_id,
+      displayName: item.display_name,
+      avatarUrl: item.avatar_url,
+      amount: Number(item.amount),
+    });
+    itemsBySettlement.set(item.settlement_id, list);
+  }
+
+  const fundSurplusMode = familyRow?.fund_surplus_mode || 'rollover';
+  const rolloverOffsetPerMember = (totals.balance > 0 && members.length > 0)
+    ? Math.floor(totals.balance / members.length)
+    : 0;
 
   const contributedByUser = new Map();
   for (const row of contributorTotals) {
@@ -647,6 +891,8 @@ async function buildFundSummary(db, familyId, month) {
   return {
     ...totals,
     month,
+    fundSurplusMode,
+    rolloverOffsetPerMember,
     pockets: pockets.map((pocket) => {
       const monthlyTarget = Number(pocket.monthly_target || 0);
       const monthlyContributed = monthlyByPocket.get(pocket.id) || 0;
@@ -665,7 +911,8 @@ async function buildFundSummary(db, familyId, month) {
         totalTransferredIn: Number(pocket.total_transferred_in || 0),
         totalTransferredOut: Number(pocket.total_transferred_out || 0),
         totalSpent: Number(pocket.total_spent || 0),
-        balance: Number(pocket.total_contributed || 0) + Number(pocket.total_transferred_in || 0) - Number(pocket.total_transferred_out || 0) - Number(pocket.total_spent || 0),
+        totalSettled: Number(pocket.total_settled || 0),
+        balance: Number(pocket.total_contributed || 0) + Number(pocket.total_transferred_in || 0) - Number(pocket.total_transferred_out || 0) - Number(pocket.total_spent || 0) - Number(pocket.total_settled || 0),
         monthlyTarget,
         monthlyContributed,
         monthlyRemaining: Math.max(0, monthlyTarget - monthlyContributed),
@@ -695,6 +942,16 @@ async function buildFundSummary(db, familyId, month) {
       fromPocket: { id: t.from_pocket_id, name: t.from_pocket_name, color: t.from_pocket_color },
       toPocket: { id: t.to_pocket_id, name: t.to_pocket_name, color: t.to_pocket_color },
       createdBy: { id: t.created_by_id, displayName: t.created_by_name, avatarUrl: t.created_by_avatar },
+    })),
+    recentSettlements: settlementRows.map((s) => ({
+      id: s.id,
+      month: s.month,
+      totalAmount: Number(s.total_amount),
+      memberCount: Number(s.member_count),
+      note: s.note,
+      settledAt: s.settled_at,
+      settledBy: { id: s.settled_by_id, displayName: s.settled_by_name, avatarUrl: s.settled_by_avatar },
+      items: itemsBySettlement.get(s.id) || [],
     })),
     dailyActivity: dailyActivity.map((activity) => ({
       date: activity.activity_date,

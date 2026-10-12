@@ -120,6 +120,7 @@ router.patch(
     body('showIncomePlan').optional().isBoolean(),
     body('showFundPlan').optional().isBoolean(),
     body('showShoppingPlan').optional().isBoolean(),
+    body('fundSurplusMode').optional().isIn(['rollover', 'refund']),
   ],
   validate,
   async (req, res) => {
@@ -135,6 +136,7 @@ router.patch(
     const showIncomePlan = req.body.showIncomePlan === undefined ? null : (req.body.showIncomePlan ? 1 : 0);
     const showFundPlan = req.body.showFundPlan === undefined ? null : (req.body.showFundPlan ? 1 : 0);
     const showShoppingPlan = req.body.showShoppingPlan === undefined ? null : (req.body.showShoppingPlan ? 1 : 0);
+    const fundSurplusMode = req.body.fundSurplusMode || null;
     await db.prepare(`
       UPDATE families
       SET name = ?, currency = ?, language = ?,
@@ -142,9 +144,10 @@ router.patch(
         show_spending_plan = COALESCE(?, show_spending_plan),
         show_income_plan = COALESCE(?, show_income_plan),
         show_fund_plan = COALESCE(?, show_fund_plan),
-        show_shopping_plan = COALESCE(?, show_shopping_plan)
+        show_shopping_plan = COALESCE(?, show_shopping_plan),
+        fund_surplus_mode = COALESCE(?, fund_surplus_mode)
       WHERE id = ?
-    `).run(name, req.body.currency, req.body.language, showRecentTransactions, showSpendingPlan, showIncomePlan, showFundPlan, showShoppingPlan, space.id);
+    `).run(name, req.body.currency, req.body.language, showRecentTransactions, showSpendingPlan, showIncomePlan, showFundPlan, showShoppingPlan, fundSurplusMode, space.id);
     await bumpFamilyRevision(db, space.id, { base: true });
     emitFamily(space.id, 'space:changed');
     res.json({ message: space.type === 'personal' ? 'Đã cập nhật thiết lập cá nhân.' : 'Đã cập nhật thông tin gia đình.' });

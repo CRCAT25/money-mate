@@ -34,6 +34,7 @@ router.get('/', async (req, res) => {
     inviteCode: family.invite_code,
     currency: family.currency,
     language: family.language,
+    fundSurplusMode: family.fund_surplus_mode || 'rollover',
     revisions: familyRevisions(family),
     members: members.map((member) => ({
       id: member.id,
@@ -58,12 +59,14 @@ router.patch(
     body('name').trim().isLength({ min: 2, max: 60 }).withMessage('Tên gia đình cần từ 2 đến 60 ký tự.'),
     body('currency').isIn(['VND', 'USD', 'EUR']).withMessage('Loại tiền chưa được hỗ trợ.'),
     body('language').isIn(['vi', 'en']).withMessage('Ngôn ngữ chưa được hỗ trợ.'),
+    body('fundSurplusMode').optional().isIn(['rollover', 'refund']).withMessage('Chế độ xử lý thặng dư không hợp lệ.'),
   ],
   validate,
   async (req, res) => {
     const db = getDb();
-    await db.prepare('UPDATE families SET name = ?, currency = ?, language = ? WHERE id = ?')
-      .run(req.body.name.trim(), req.body.currency, req.body.language, req.user.familyId);
+    const fundSurplusMode = req.body.fundSurplusMode || null;
+    await db.prepare('UPDATE families SET name = ?, currency = ?, language = ?, fund_surplus_mode = COALESCE(?, fund_surplus_mode) WHERE id = ?')
+      .run(req.body.name.trim(), req.body.currency, req.body.language, fundSurplusMode, req.user.familyId);
     await bumpFamilyRevision(db, req.user.familyId, { base: true });
     emitFamily(req.user.familyId, 'family:changed');
     res.json({ message: 'Đã cập nhật thông tin gia đình.' });

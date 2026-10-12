@@ -140,6 +140,7 @@ export function mapSpace(space) {
     showIncomePlan: space.show_income_plan !== 0,
     showFundPlan: space.show_fund_plan !== 0,
     showShoppingPlan: space.show_shopping_plan !== 0,
+    fundSurplusMode: space.fund_surplus_mode || 'rollover',
     revisions: {
       baseRevision: Number(space.base_revision || 0),
       transactionsRevision: Number(space.transactions_revision || 0),
