@@ -253,12 +253,30 @@ export async function getFundTotals(db, familyId, { excludeTransactionId = null,
     JOIN fund_pockets fp ON fp.id = t.fund_pocket_id
     WHERE ${where.join(' AND ')}
   `).get(...params);
+  let totalTransferredIn = 0;
+  let totalTransferredOut = 0;
+  if (pocketId) {
+    const transferredIn = await db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) AS total
+      FROM fund_pocket_transfers
+      WHERE family_id = ? AND to_pocket_id = ?
+    `).get(familyId, pocketId);
+    const transferredOut = await db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) AS total
+      FROM fund_pocket_transfers
+      WHERE family_id = ? AND from_pocket_id = ?
+    `).get(familyId, pocketId);
+    totalTransferredIn = Number(transferredIn?.total || 0);
+    totalTransferredOut = Number(transferredOut?.total || 0);
+  }
   const totalContributed = Number(contribution?.total || 0);
   const totalSpent = Number(spent?.total || 0);
   return {
     totalContributed,
     totalSpent,
-    balance: totalContributed - totalSpent,
+    totalTransferredIn,
+    totalTransferredOut,
+    balance: totalContributed + totalTransferredIn - totalTransferredOut - totalSpent,
   };
 }
 

@@ -347,10 +347,144 @@ router.delete(
   },
 );
 
+router.get(
+  '/transfers',
+  async (req, res) => {
+    const db = getDb();
+    const transfers = await db.prepare(`
+      SELECT fpt.id, fpt.amount, fpt.transfer_date, fpt.note, fpt.created_at,
+        fpt.from_pocket_id, fp_from.name AS from_pocket_name, fp_from.color AS from_pocket_color,
+        fpt.to_pocket_id, fp_to.name AS to_pocket_name, fp_to.color AS to_pocket_color,
+        u.id AS created_by_id, u.display_name AS created_by_name, u.avatar_url AS created_by_avatar
+      FROM fund_pocket_transfers fpt
+      JOIN fund_pockets fp_from ON fp_from.id = fpt.from_pocket_id
+      JOIN fund_pockets fp_to ON fp_to.id = fpt.to_pocket_id
+      JOIN users u ON u.id = fpt.created_by
+      WHERE fpt.family_id = ?
+      ORDER BY fpt.transfer_date DESC, fpt.created_at DESC
+      LIMIT 100
+    `).all(req.space.id);
+    res.json(transfers.map((t) => ({
+      id: t.id,
+      amount: Number(t.amount),
+      transferDate: t.transfer_date,
+      note: t.note,
+      createdAt: t.created_at,
+      fromPocket: { id: t.from_pocket_id, name: t.from_pocket_name, color: t.from_pocket_color },
+      toPocket: { id: t.to_pocket_id, name: t.to_pocket_name, color: t.to_pocket_color },
+      createdBy: { id: t.created_by_id, displayName: t.created_by_name, avatarUrl: t.created_by_avatar },
+    })));
+  },
+);
+
+router.post(
+  '/transfers',
+  [
+    body('fromPocketId').isUUID().withMessage('Quỹ nguồn không hợp lệ.'),
+    body('toPocketId').isUUID().withMessage('Quỹ đích không hợp lệ.'),
+    body('amount').isInt({ min: 1, max: 999999999999 }).withMessage('Số tiền chuyển cần lớn hơn 0.'),
+    body('transferDate').isISO8601({ strict: true }).withMessage('Ngày chuyển không hợp lệ.'),
+    body('note').optional({ nullable: true }).trim().isLength({ max: 240 }).withMessage('Ghi chú tối đa 240 ký tự.'),
+  ],
+  validate,
+  async (req, res) => {
+    const { fromPocketId, toPocketId, transferDate, note } = req.body;
+    const amount = Number(req.body.amount);
+    if (fromPocketId === toPocketId) {
+      return res.status(422).json({ message: 'Quỹ nguồn và quỹ đích không được trùng nhau.' });
+    }
+    const db = getDb();
+    const [fromPocket, toPocket] = await Promise.all([
+      db.prepare('SELECT id, name FROM fund_pockets WHERE id = ? AND family_id = ? AND is_archived = 0').get(fromPocketId, req.space.id),
+      db.prepare('SELECT id, name FROM fund_pockets WHERE id = ? AND family_id = ? AND is_archived = 0').get(toPocketId, req.space.id),
+    ]);
+    if (!fromPocket) return res.status(404).json({ message: 'Không tìm thấy quỹ nguồn.' });
+    if (!toPocket) return res.status(404).json({ message: 'Không tìm thấy quỹ đích.' });
+
+    let transferId;
+    try {
+      await db.transaction(async (transaction) => {
+        await lockFund(transaction, req.space.id);
+        const sourceTotals = await getFundTotals(transaction, req.space.id, { pocketId: fromPocketId });
+        if (sourceTotals.balance < amount) {
+          const error = new Error(`Số dư ${fromPocket.name} không đủ để chuyển (còn ${sourceTotals.balance.toLocaleString('vi-VN')} đ).`);
+          error.status = 422;
+          throw error;
+        }
+        transferId = id();
+        await transaction.prepare(`
+          INSERT INTO fund_pocket_transfers (id, family_id, from_pocket_id, to_pocket_id, amount, transfer_date, note, created_by)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          transferId,
+          req.space.id,
+          fromPocketId,
+          toPocketId,
+          amount,
+          transferDate.slice(0, 10),
+          note?.trim() || null,
+          req.user.id,
+        );
+        await bumpFamilyRevision(transaction, req.space.id, { transactions: true });
+      });
+    } catch (err) {
+      if (err.status) {
+        return res.status(err.status).json({ message: err.message });
+      }
+      throw err;
+    }
+
+    emitFamily(req.space.id, 'transactions:changed', { action: 'fund-transferred', id: transferId });
+    res.status(201).json({
+      transferId,
+      message: `Đã chuyển ${amount.toLocaleString('vi-VN')} đ từ ${fromPocket.name} sang ${toPocket.name}.`,
+    });
+  },
+);
+
+router.delete(
+  '/transfers/:id',
+  [param('id').isUUID().withMessage('Giao dịch chuyển quỹ không hợp lệ.')],
+  validate,
+  async (req, res) => {
+    const db = getDb();
+    const result = await db.transaction(async (transaction) => {
+      await lockFund(transaction, req.space.id);
+      const existing = await transaction.prepare(`
+        SELECT id, created_by, from_pocket_id, to_pocket_id, amount
+        FROM fund_pocket_transfers
+        WHERE id = ? AND family_id = ?
+      `).get(req.params.id, req.space.id);
+      if (!existing) return { status: 404, message: 'Không tìm thấy giao dịch chuyển quỹ.' };
+      if (req.space.type === 'family' && existing.created_by && existing.created_by !== req.user.id) {
+        return { status: 403, message: 'Bạn chỉ có thể xóa giao dịch chuyển quỹ của chính mình.' };
+      }
+
+      const targetTotals = await getFundTotals(transaction, req.space.id, { pocketId: existing.to_pocket_id });
+      if (targetTotals.balance < Number(existing.amount)) {
+        return {
+          status: 422,
+          message: 'Không thể xóa giao dịch do quỹ nhận đã chi tiêu số tiền này.',
+        };
+      }
+
+      await transaction.prepare(`
+        DELETE FROM fund_pocket_transfers
+        WHERE id = ? AND family_id = ?
+      `).run(req.params.id, req.space.id);
+      await bumpFamilyRevision(transaction, req.space.id, { transactions: true });
+      return null;
+    });
+    if (result) return res.status(result.status).json({ message: result.message });
+    emitFamily(req.space.id, 'transactions:changed', { action: 'fund-transfer-deleted', id: req.params.id });
+    res.status(204).end();
+  },
+);
+
 async function buildFundSummary(db, familyId, month) {
   const totals = await getFundTotals(db, familyId);
   const range = monthRange(month);
-  const [members, contributorTotals, pockets, memberTargets, monthlyContributions, contributionRows, dailyActivity] = await Promise.all([
+  const [members, contributorTotals, pockets, memberTargets, monthlyContributions, contributionRows, dailyActivity, recentTransfers] = await Promise.all([
     db.prepare(`
       SELECT u.id, u.display_name, u.avatar_url
       FROM family_members fm
@@ -368,7 +502,9 @@ async function buildFundSummary(db, familyId, month) {
       SELECT fp.*, c.id AS linked_category_id, c.name AS category_name,
         c.icon AS category_icon, c.color AS category_color,
         COALESCE(fc.total_contributed, 0) AS total_contributed,
-        COALESCE(ft.total_spent, 0) AS total_spent
+        COALESCE(ft.total_spent, 0) AS total_spent,
+        COALESCE(tin.total_transferred_in, 0) AS total_transferred_in,
+        COALESCE(tout.total_transferred_out, 0) AS total_transferred_out
       FROM fund_pockets fp
       LEFT JOIN (
         SELECT fund_pocket_id, SUM(amount) AS total_contributed
@@ -380,11 +516,23 @@ async function buildFundSummary(db, familyId, month) {
         WHERE family_id = ? AND type = 'expense' AND paid_from_fund = 1
         GROUP BY fund_pocket_id
       ) ft ON ft.fund_pocket_id = fp.id
+      LEFT JOIN (
+        SELECT to_pocket_id, SUM(amount) AS total_transferred_in
+        FROM fund_pocket_transfers
+        WHERE family_id = ?
+        GROUP BY to_pocket_id
+      ) tin ON tin.to_pocket_id = fp.id
+      LEFT JOIN (
+        SELECT from_pocket_id, SUM(amount) AS total_transferred_out
+        FROM fund_pocket_transfers
+        WHERE family_id = ?
+        GROUP BY from_pocket_id
+      ) tout ON tout.from_pocket_id = fp.id
       LEFT JOIN categories c ON c.id = fp.category_id
       WHERE fp.family_id = ? AND fp.is_archived = 0
       ORDER BY CASE WHEN fp.category_id IS NOT NULL THEN 0 ELSE 1 END,
         LOWER(COALESCE(c.name, fp.name)), fp.is_default DESC, fp.created_at
-    `).all(familyId, familyId, familyId),
+    `).all(familyId, familyId, familyId, familyId, familyId),
     db.prepare(`
       SELECT fmt.pocket_id, fmt.user_id, fmt.target_amount
       FROM fund_pocket_member_targets fmt
@@ -424,6 +572,19 @@ async function buildFundSummary(db, familyId, month) {
       GROUP BY activity_date
       ORDER BY activity_date
     `).all(familyId, range.start, range.end, familyId, range.start, range.end),
+    db.prepare(`
+      SELECT fpt.id, fpt.amount, fpt.transfer_date, fpt.note, fpt.created_at,
+        fpt.from_pocket_id, fp_from.name AS from_pocket_name, fp_from.color AS from_pocket_color,
+        fpt.to_pocket_id, fp_to.name AS to_pocket_name, fp_to.color AS to_pocket_color,
+        u.id AS created_by_id, u.display_name AS created_by_name, u.avatar_url AS created_by_avatar
+      FROM fund_pocket_transfers fpt
+      JOIN fund_pockets fp_from ON fp_from.id = fpt.from_pocket_id
+      JOIN fund_pockets fp_to ON fp_to.id = fpt.to_pocket_id
+      JOIN users u ON u.id = fpt.created_by
+      WHERE fpt.family_id = ?
+      ORDER BY fpt.transfer_date DESC, fpt.created_at DESC
+      LIMIT 20
+    `).all(familyId),
   ]);
 
   const contributedByUser = new Map();
@@ -501,8 +662,10 @@ async function buildFundSummary(db, familyId, month) {
           color: pocket.category_color,
         } : null,
         totalContributed: Number(pocket.total_contributed || 0),
+        totalTransferredIn: Number(pocket.total_transferred_in || 0),
+        totalTransferredOut: Number(pocket.total_transferred_out || 0),
         totalSpent: Number(pocket.total_spent || 0),
-        balance: Number(pocket.total_contributed || 0) - Number(pocket.total_spent || 0),
+        balance: Number(pocket.total_contributed || 0) + Number(pocket.total_transferred_in || 0) - Number(pocket.total_transferred_out || 0) - Number(pocket.total_spent || 0),
         monthlyTarget,
         monthlyContributed,
         monthlyRemaining: Math.max(0, monthlyTarget - monthlyContributed),
@@ -523,6 +686,16 @@ async function buildFundSummary(db, familyId, month) {
     }),
     members: memberSummaries,
     recentContributions: batches,
+    recentTransfers: recentTransfers.map((t) => ({
+      id: t.id,
+      amount: Number(t.amount),
+      transferDate: t.transfer_date,
+      note: t.note,
+      createdAt: t.created_at,
+      fromPocket: { id: t.from_pocket_id, name: t.from_pocket_name, color: t.from_pocket_color },
+      toPocket: { id: t.to_pocket_id, name: t.to_pocket_name, color: t.to_pocket_color },
+      createdBy: { id: t.created_by_id, displayName: t.created_by_name, avatarUrl: t.created_by_avatar },
+    })),
     dailyActivity: dailyActivity.map((activity) => ({
       date: activity.activity_date,
       contributed: Number(activity.contributed || 0),

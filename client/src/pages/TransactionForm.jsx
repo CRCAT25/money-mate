@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, Grid2X2, Landmark, LoaderCircle } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, Check, ChevronLeft, ChevronRight, Grid2X2, Landmark, LoaderCircle } from 'lucide-react';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
 import Skeleton from '../components/ui/Skeleton.jsx';
+import TransferFundModal from '../components/fund/TransferFundModal.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -44,6 +45,7 @@ export default function TransactionForm() {
   const [keypadExpression, setKeypadExpression] = useState('');
   const amountInput = useRef(null);
   const isContributionEdit = Boolean(contributionId);
+  const [transferOpen, setTransferOpen] = useState(false);
 
   const displayedAmount = formatAmountExpression(keypadExpression || form.amount);
 
@@ -543,7 +545,16 @@ export default function TransactionForm() {
             <div className="px-4 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-5">
               {isFundExpense && (
                 <div className="mb-4 rounded-[12px] border border-ink/[0.06] bg-mint/25 p-2.5">
-                  <div className="flex items-center gap-1.5 text-[12px] font-medium text-ink"><Landmark className="size-3.5 text-forest" /> Chọn quỹ thanh toán</div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-[12px] font-medium text-ink"><Landmark className="size-3.5 text-forest" /> Chọn quỹ thanh toán</div>
+                    <button
+                      type="button"
+                      onClick={() => setTransferOpen(true)}
+                      className="flex items-center gap-1 rounded-[8px] border border-forest/20 bg-white/70 px-2 py-1 text-[10px] font-medium text-forest transition hover:bg-white active:scale-95"
+                    >
+                      <ArrowLeftRight className="size-3" /> Chuyển quỹ
+                    </button>
+                  </div>
                   <p className="mt-0.5 text-[9px] font-normal text-ink/38">Số dư có thể thanh toán {formatInputAmount(fund?.balance || 0) || '0'} {currencySymbol(family.currency)}</p>
                   {spendablePockets.length ? (
                     <PocketSelector pockets={spendablePockets} value={form.fundPocketId} onChange={(fundPocketId) => setForm((current) => ({ ...current, fundPocketId, paidFromFund: true }))} currency={family.currency} compact />
@@ -596,6 +607,17 @@ export default function TransactionForm() {
         </form>
       </section>
       {isMobile && keypadOpen && <AmountKeypad onKey={handleKeypadKey} />}
+      <TransferFundModal
+        open={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        pockets={selectableFundPockets}
+        currency={family.currency}
+        defaultFromPocketId={form.fundPocketId || selectableFundPockets[0]?.id}
+        onSuccess={() => {
+          touch();
+          loadFund(form.transactionDate.slice(0, 7)).then((entry) => setFund(entry?.data || null)).catch(() => {});
+        }}
+      />
     </div>
   );
 }

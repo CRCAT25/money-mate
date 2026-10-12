@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Check, Landmark, LoaderCircle, Pencil, Plus, Users, X } from 'lucide-react';
+import { ArrowLeftRight, ArrowRight, Check, Landmark, LoaderCircle, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import PlanModeTabs from '../components/plans/PlanModeTabs.jsx';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
 import MoneyInput from '../components/ui/MoneyInput.jsx';
 import Avatar from '../components/ui/Avatar.jsx';
 import Modal from '../components/ui/Modal.jsx';
+import ConfirmModal from '../components/ui/ConfirmModal.jsx';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import Skeleton from '../components/ui/Skeleton.jsx';
+import TransferFundModal from '../components/fund/TransferFundModal.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useFamilyData } from '../context/FamilyContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -18,7 +20,7 @@ import { visibleFundPockets } from '../utils/fund.js';
 const pocketColors = ['#3D7060', '#D47A61', '#D29D3A', '#4B83A6', '#7B6D9C', '#5E8B62', '#C45D7A', '#348A86'];
 
 export default function FundPlans() {
-  const { family } = useAuth();
+  const { family, user } = useAuth();
   const { familyDetails, getCache, isPersonal, loadFund, prefetchPages, touch } = useFamilyData();
   const { notify } = useToast();
   const [month, setMonth] = useState(currentMonth());
@@ -31,6 +33,9 @@ export default function FundPlans() {
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newPocket, setNewPocket] = useState({ name: '', color: pocketColors[1] });
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [deleteTransferTarget, setDeleteTransferTarget] = useState(null);
+  const [deletingTransfer, setDeletingTransfer] = useState(false);
 
   useEffect(() => {
     if (isPersonal) return undefined;
@@ -143,6 +148,24 @@ export default function FundPlans() {
     }
   };
 
+  const confirmDeleteTransfer = async () => {
+    if (!deleteTransferTarget || deletingTransfer) return;
+    setDeletingTransfer(true);
+    try {
+      await api.delete(`/fund/transfers/${deleteTransferTarget.id}`);
+      touch();
+      const entry = await loadFund(month);
+      setData(entry?.data || null);
+      void prefetchPages(month);
+      setDeleteTransferTarget(null);
+      notify('Đã xóa giao dịch chuyển quỹ.');
+    } catch (err) {
+      notify(errorMessage(err), 'error');
+    } finally {
+      setDeletingTransfer(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl space-y-3 sm:space-y-4">
       <header className="grid min-h-9 grid-cols-[36px_minmax(0,1fr)_36px] items-center gap-2">
@@ -181,8 +204,14 @@ export default function FundPlans() {
         />
       ) : (
         <>
-          <FundPlanSummary totals={totals} currency={family.currency} />
+          <FundPlanSummary totals={totals} currency={family.currency} onTransfer={() => setTransferOpen(true)} />
           <FundPlanOverview pockets={pockets} currency={family.currency} onEdit={openEditor} />
+          <FundTransfersHistory
+            transfers={data?.recentTransfers || []}
+            currency={family.currency}
+            currentUserId={user?.id}
+            onDelete={(t) => setDeleteTransferTarget(t)}
+          />
         </>
       )}
 
@@ -202,18 +231,50 @@ export default function FundPlans() {
           {creating ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />} Tạo quỹ
         </button>
       </Modal>
+
+      <TransferFundModal
+        open={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        pockets={pockets}
+        currency={family.currency}
+        onSuccess={() => {
+          touch();
+          loadFund(month).then((entry) => setData(entry?.data || null)).catch(() => {});
+          void prefetchPages(month);
+        }}
+      />
+
+      <ConfirmModal
+        open={Boolean(deleteTransferTarget)}
+        title="Xóa giao dịch chuyển quỹ"
+        description={deleteTransferTarget ? `Bạn có chắc muốn xóa giao dịch chuyển ${formatMoney(deleteTransferTarget.amount, family.currency)} từ ${deleteTransferTarget.fromPocket.name} sang ${deleteTransferTarget.toPocket.name}?` : ''}
+        confirmLabel="Xóa giao dịch"
+        tone="danger"
+        loading={deletingTransfer}
+        onClose={() => { if (!deletingTransfer) setDeleteTransferTarget(null); }}
+        onConfirm={confirmDeleteTransfer}
+      />
     </div>
   );
 }
 
-function FundPlanSummary({ totals, currency }) {
+function FundPlanSummary({ totals, currency, onTransfer }) {
   const percentage = totals.target > 0 ? Math.min(100, (totals.contributed / totals.target) * 100) : 0;
   const progressTone = totals.remaining > 0 ? 'bg-coral' : 'bg-forest';
   return (
     <section className="overflow-hidden rounded-[16px] border border-ink/[0.07] bg-[linear-gradient(135deg,rgba(230,242,237,0.9),rgba(255,250,240,0.9))] px-4 py-3 shadow-card sm:px-5">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2"><Landmark className="size-4 text-forest" /><h2 className="text-sm font-semibold tracking-[-0.015em] text-ink">Tổng cần nạp</h2></div>
-        <span className="shrink-0 whitespace-nowrap text-right text-xs font-medium text-ink/78">{formatMoney(totals.target, currency)}</span>
+        <div className="flex items-center gap-2">
+          <span className="shrink-0 whitespace-nowrap text-right text-xs font-medium text-ink/78">{formatMoney(totals.target, currency)}</span>
+          <button
+            type="button"
+            onClick={onTransfer}
+            className="flex items-center gap-1 rounded-[8px] border border-forest/20 bg-white/75 px-2.5 py-1 text-[11px] font-medium text-forest shadow-sm transition hover:bg-white active:scale-95"
+          >
+            <ArrowLeftRight className="size-3" /> Chuyển quỹ
+          </button>
+        </div>
       </div>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink/[0.09]"><span className={`block h-full rounded-full transition-[width] duration-700 ease-out ${progressTone}`} style={{ width: `${percentage}%` }} /></div>
       <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-normal text-ink/38">
@@ -257,7 +318,14 @@ function FundPlanCard({ pocket, currency, index }) {
         <span className="shrink-0 text-xs font-normal text-ink/72">{formatMoney(pocket.monthlyTarget, currency)}</span>
       </div>
       <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-ink/[0.09]"><span className={`block h-full rounded-full transition-[width] duration-700 ${progressTone}`} style={{ width: `${pocket.monthlyPercentage}%` }} /></div>
-      <div className="mt-1.5 flex items-center justify-between text-[10px] font-normal text-ink/38"><span>Đã nạp: {formatMoney(pocket.monthlyContributed, currency)}</span><span className={pocket.monthlyRemaining > 0 ? 'text-coral' : 'text-forest'}>{pocket.monthlyRemaining > 0 ? `Còn ${formatMoney(pocket.monthlyRemaining, currency)}` : 'Đã đủ'}</span></div>
+      <div className="mt-1.5 flex items-center justify-between text-[10px] font-normal text-ink/38">
+        <span className="flex items-center gap-1.5">
+          <span>Đã nạp: {formatMoney(pocket.monthlyContributed, currency)}</span>
+          <span>·</span>
+          <span>Số dư: <strong className="font-normal text-ink/65">{formatMoney(pocket.balance, currency)}</strong></span>
+        </span>
+        <span className={pocket.monthlyRemaining > 0 ? 'text-coral' : 'text-forest'}>{pocket.monthlyRemaining > 0 ? `Còn ${formatMoney(pocket.monthlyRemaining, currency)}` : 'Đã đủ'}</span>
+      </div>
       <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
         {pocket.memberTargets.map((member) => (
           <div key={member.id} className="grid min-w-0 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-x-2 rounded-[9px] bg-ink/[0.025] px-2.5 py-2">
@@ -336,3 +404,66 @@ function FundPocketIcon({ pocket }) {
   if (!pocket.category) return <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: pocket.color }} />;
   return <span className="grid size-8 shrink-0 place-items-center rounded-[10px]" style={{ color: pocket.category.color, backgroundColor: `${pocket.category.color}14` }}><CategoryIcon name={pocket.category.icon} className="size-[17px]" strokeWidth={2.15} /></span>;
 }
+
+function FundTransfersHistory({ transfers = [], currency, currentUserId, onDelete }) {
+  if (!transfers.length) return null;
+
+  return (
+    <section className="space-y-2 pt-2">
+      <div className="flex items-center justify-between px-1">
+        <h2 className="text-sm font-semibold tracking-[-0.015em] text-ink">Lịch sử chuyển quỹ gần đây</h2>
+        <span className="text-[10px] font-normal text-ink/35">{transfers.length} giao dịch</span>
+      </div>
+      <div className="space-y-2">
+        {transfers.map((t) => {
+          const isOwner = t.createdBy?.id === currentUserId;
+          return (
+            <article key={t.id} className="rounded-[14px] border border-ink/[0.065] bg-paper/90 p-3 shadow-card flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-ink">
+                  <span className="inline-flex items-center gap-1 font-semibold text-ink">
+                    <span className="size-2 rounded-full" style={{ backgroundColor: t.fromPocket.color }} />
+                    <span className="truncate max-w-[100px] sm:max-w-[140px]">{t.fromPocket.name}</span>
+                  </span>
+                  <ArrowRight className="size-3 text-ink/35 shrink-0" />
+                  <span className="inline-flex items-center gap-1 font-semibold text-forest">
+                    <span className="size-2 rounded-full" style={{ backgroundColor: t.toPocket.color }} />
+                    <span className="truncate max-w-[100px] sm:max-w-[140px]">{t.toPocket.name}</span>
+                  </span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-ink/45">
+                  <span>{t.transferDate}</span>
+                  <span>·</span>
+                  <span>{t.createdBy?.displayName}</span>
+                  {t.note && (
+                    <>
+                      <span>·</span>
+                      <span className="italic text-ink/60 truncate max-w-[140px] sm:max-w-[200px]">"{t.note}"</span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-xs font-semibold text-forest">
+                  {formatMoney(t.amount, currency)}
+                </span>
+                {isOwner && (
+                  <button
+                    type="button"
+                    onClick={() => onDelete(t)}
+                    className="p-1 text-ink/35 hover:text-coral transition active:scale-90"
+                    title="Xóa giao dịch chuyển quỹ"
+                    aria-label="Xóa giao dịch chuyển quỹ"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+

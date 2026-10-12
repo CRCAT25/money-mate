@@ -45,6 +45,11 @@ export function monthLabel(value) {
 
 export const currentMonth = () => new Date().toISOString().slice(0, 7);
 
+export const localToday = () => {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
 export function shiftMonth(month, amount) {
   const [year, monthNumber] = month.split('-').map(Number);
   return new Date(Date.UTC(year, monthNumber - 1 + amount, 1)).toISOString().slice(0, 7);

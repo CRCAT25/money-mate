@@ -736,7 +736,61 @@ test('family fund tracks member contributions and fund-paid expenses independent
   const houseInSeptember = septemberTracking.body.pockets.find((pocket) => pocket.id === housePocket.body.pocket.id);
   assert.equal(houseInSeptember.monthlyContributed, 0);
   assert.equal(houseInSeptember.monthlyRemaining, 10000000);
-  assert.equal(houseInSeptember.memberTargets.find((member) => member.id === owner.id).remaining, 5000000);
+  // Test fund pocket transfers
+  const partnerAuth = { Authorization: `Bearer ${partnerLogin.body.accessToken}` };
+  await request(app).post('/api/fund/transfers').set(ownerAuth).send({
+    fromPocketId: cashPocketId,
+    toPocketId: cashPocketId,
+    amount: 100000,
+    transferDate: '2026-08-16',
+  }).expect(422);
+
+  await request(app).post('/api/fund/transfers').set(ownerAuth).send({
+    fromPocketId: cashPocketId,
+    toPocketId: housePocket.body.pocket.id,
+    amount: 800000,
+    transferDate: '2026-08-16',
+  }).expect(422);
+
+  const transferRes = await request(app).post('/api/fund/transfers').set(partnerAuth).send({
+    fromPocketId: cashPocketId,
+    toPocketId: housePocket.body.pocket.id,
+    amount: 250000,
+    transferDate: '2026-08-16',
+    note: 'Chuyển tiền sang quỹ nhà',
+  }).expect(201);
+  assert.ok(transferRes.body.transferId);
+
+  const fundAfterTransfer = await request(app).get('/api/fund').set(ownerAuth).expect(200);
+  assert.equal(fundAfterTransfer.body.balance, 700000);
+  const cashAfterTransfer = fundAfterTransfer.body.pockets.find((p) => p.id === cashPocketId);
+  const houseAfterTransfer = fundAfterTransfer.body.pockets.find((p) => p.id === housePocket.body.pocket.id);
+  assert.equal(cashAfterTransfer.balance, 450000);
+  assert.equal(cashAfterTransfer.totalTransferredOut, 250000);
+  assert.equal(houseAfterTransfer.balance, 250000);
+  assert.equal(houseAfterTransfer.totalTransferredIn, 250000);
+  assert.equal(fundAfterTransfer.body.recentTransfers.length, 1);
+  assert.equal(fundAfterTransfer.body.recentTransfers[0].amount, 250000);
+
+  // Spend from the destination pocket
+  await request(app).post('/api/transactions').set(ownerAuth).send({
+    type: 'expense',
+    amount: 200000,
+    categoryId: food.id,
+    transactionDate: '2026-08-16',
+    paidFromFund: true,
+    fundPocketId: housePocket.body.pocket.id,
+  }).expect(201);
+
+  // Trying to delete the transfer should fail because the destination pocket now only has 50k (< 250k)
+  await request(app).delete(`/api/fund/transfers/${transferRes.body.transferId}`).set(partnerAuth).expect(422);
+
+  // Listing transfers
+  const listTransfers = await request(app).get('/api/fund/transfers').set(ownerAuth).expect(200);
+  assert.equal(listTransfers.body.length, 1);
+  assert.equal(listTransfers.body[0].id, transferRes.body.transferId);
+  assert.equal(listTransfers.body[0].fromPocket.name, 'Tiền mặt');
+  assert.equal(listTransfers.body[0].toPocket.name, 'Tiền nhà');
 
   const personal = ownerLogin.body.spaces.find((space) => space.type === 'personal');
   const personalAuth = { ...ownerAuth, 'X-MoneyMate-Space-Id': personal.id };

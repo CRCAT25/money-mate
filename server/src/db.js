@@ -133,7 +133,7 @@ function postgresQuery(source) {
     .replace(/\?/g, () => `$${++index}`);
 }
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 async function migrate(db) {
   let applied;
@@ -166,6 +166,10 @@ async function migrate(db) {
     await migrateV2(db);
     await recordSchemaVersion(db, 2);
   }
+  if (!applied.has(3)) {
+    await migrateV3(db);
+    await recordSchemaVersion(db, 3);
+  }
 }
 
 async function recordSchemaVersion(db, version) {
@@ -174,6 +178,35 @@ async function recordSchemaVersion(db, version) {
   } else {
     db.sqlite.exec(`INSERT OR IGNORE INTO schema_version (version) VALUES (${Number(version)})`);
   }
+}
+
+// v3: fund transfers between pockets
+async function migrateV3(db) {
+  const amountType = db.kind === 'postgres' ? 'BIGINT' : 'INTEGER';
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS fund_pocket_transfers (
+      id TEXT PRIMARY KEY,
+      family_id TEXT NOT NULL,
+      from_pocket_id TEXT NOT NULL,
+      to_pocket_id TEXT NOT NULL,
+      amount ${amountType} NOT NULL CHECK(amount > 0),
+      transfer_date TEXT NOT NULL,
+      note TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+      FOREIGN KEY (from_pocket_id) REFERENCES fund_pockets(id) ON DELETE RESTRICT,
+      FOREIGN KEY (to_pocket_id) REFERENCES fund_pockets(id) ON DELETE RESTRICT,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_fund_transfers_family_date
+      ON fund_pocket_transfers(family_id, transfer_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_fund_transfers_from_pocket
+      ON fund_pocket_transfers(from_pocket_id);
+    CREATE INDEX IF NOT EXISTS idx_fund_transfers_to_pocket
+      ON fund_pocket_transfers(to_pocket_id);
+  `);
 }
 
 // v2: bank account connections (SePay webhooks) and transactions waiting to be categorized.
