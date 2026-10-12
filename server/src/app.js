@@ -25,18 +25,6 @@ export function createApp() {
   app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 120, standardHeaders: 'draft-8' }));
 
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'MoneyMate API' }));
-  app.post('/api/sync-neon', async (req, res) => {
-    if (req.headers['x-admin-key'] !== 'CRcat25092003dqt') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    try {
-      const { syncNeonToSupabase } = await import('./syncNeon.js');
-      const result = await syncNeonToSupabase();
-      res.json(result);
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
   app.use('/api/auth', authRoutes);
   app.use('/api/bank', bankRoutes);
   app.use('/api/budgets', budgetRoutes);
