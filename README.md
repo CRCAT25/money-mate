@@ -18,7 +18,7 @@ MoneyMate là web app quản lý tài chính chung cho hai thành viên trong gi
 ## Công nghệ
 
 - Frontend: React 19, Vite, Tailwind CSS, Recharts, Lucide, Axios.
-- Backend: Node.js, Express, SQLite local, PostgreSQL/Neon production, JWT, bcrypt, Socket.IO, Web Push.
+- Backend: Node.js, Express, SQLite local, PostgreSQL/Supabase production, JWT, bcrypt, Socket.IO, Web Push.
 - Kiểm thử API: Node test runner và Supertest.
 
 ## Chạy cục bộ
@@ -77,7 +77,7 @@ Project đã có `vercel.json` để deploy frontend và Express API chung một
 https://moneymate-theta.vercel.app
 ```
 
-Vercel project dùng Neon PostgreSQL thông qua `DATABASE_URL`. Các biến bắt buộc khác gồm `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `AUTH_LINK_MODE`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` và `VAPID_SUBJECT`. Để bật ước lượng giá, mỗi không gian tự tạo key trong Google AI Studio rồi dán vào mục Cài đặt của MoneyMate. Backend lưu key đã mã hóa; Vercel chỉ cần có `GEMINI_ENCRYPTION_KEY` và tùy chọn `GEMINI_MODEL=gemini-3.5-flash`. Chạy deploy mới bằng:
+Vercel project dùng Supabase PostgreSQL thông qua `DATABASE_URL`. Các biến bắt buộc khác gồm `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `AUTH_LINK_MODE`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` và `VAPID_SUBJECT`. Để bật ước lượng giá, mỗi không gian tự tạo key trong Google AI Studio rồi dán vào mục Cài đặt của MoneyMate. Backend lưu key đã mã hóa; Vercel chỉ cần có `GEMINI_ENCRYPTION_KEY` và tùy chọn `GEMINI_MODEL=gemini-3.5-flash`. Chạy deploy mới bằng:
 
 ```bash
 vercel deploy --prod
