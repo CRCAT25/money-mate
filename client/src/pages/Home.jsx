@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarDays, ChevronDown, Landmark, Pencil, Trash2, X } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronRight, Landmark, Pencil, Trash2, X } from 'lucide-react';
 import MonthPicker from '../components/ui/MonthPicker.jsx';
 import Skeleton, { TransactionListSkeleton } from '../components/ui/Skeleton.jsx';
 import TransactionList from '../components/TransactionList.jsx';
@@ -263,13 +263,16 @@ function FundCard({
   onDeleteContribution,
   onDeleteTransaction,
 }) {
+  const navigate = useNavigate();
   const [fundPlanExpanded, setFundPlanExpanded] = useState(false);
   const [contributionsExpanded, setContributionsExpanded] = useState(false);
   const [expensesExpanded, setExpensesExpanded] = useState(true);
 
   const pockets = visibleFundPockets(fund?.pockets);
   const plannedPockets = pockets.filter((pocket) => Number(pocket.monthlyTarget || 0) > 0);
-  const fundPockets = pockets.filter((pocket) => Number(pocket.monthlyContributed || 0) > 0);
+  const fundPockets = pockets.filter(
+    (pocket) => Number(pocket.monthlyTarget || 0) > 0 || Number(pocket.monthlyContributed || 0) > 0,
+  );
   const monthlyTarget = plannedPockets.reduce((sum, pocket) => sum + Number(pocket.monthlyTarget || 0), 0);
   const monthlyContributed = plannedPockets.reduce((sum, pocket) => sum + Number(pocket.monthlyContributed || 0), 0);
   const monthlyRemaining = plannedPockets.reduce((sum, pocket) => sum + Number(pocket.monthlyRemaining || 0), 0);
@@ -366,7 +369,7 @@ function FundCard({
 
             {loading ? (
               <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
-                {[0, 1].map((index) => (
+                {[0, 1, 2, 3].map((index) => (
                   <div key={index} className="rounded-[10px] border border-white/75 bg-white/55 px-2.5 py-2">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
@@ -386,41 +389,53 @@ function FundCard({
                 ))}
               </div>
             ) : fundPockets.length > 0 ? (
-              <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
-                {fundPockets.map((pocket) => {
-                  const hasTarget = Number(pocket.monthlyTarget || 0) > 0;
-                  const progress = hasTarget ? pocket.monthlyPercentage : 0;
-                  return (
-                    <div key={pocket.id} className="rounded-[10px] border border-white/75 bg-white/55 px-2.5 py-2">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: pocket.color }} />
-                        <span className="min-w-0 flex-1 truncate text-[11px] font-normal text-ink/65">{pocket.name}</span>
-                        <span className="shrink-0 text-[10px] font-normal text-ink">
-                          {hasTarget
-                            ? `${formatMoney(pocket.monthlyContributed, currency)} / ${formatMoney(pocket.monthlyTarget, currency)}`
-                            : formatMoney(pocket.balance, currency)}
-                        </span>
-                      </div>
-                      <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-ink/[0.07]">
-                        <div
-                          className={`h-full rounded-full transition-[width] duration-500 ${pocket.monthlyRemaining > 0 ? 'bg-coral' : 'bg-forest'}`}
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                      {hasTarget ? (
-                        <div className="mt-1.5 flex items-center justify-between text-[9px] font-normal text-ink/42">
-                          <span>Đã góp {formatMoney(pocket.monthlyContributed, currency)}</span>
-                          <span className={pocket.monthlyRemaining > 0 ? 'text-coral' : 'text-forest'}>
-                            {pocket.monthlyRemaining > 0 ? `Còn thiếu ${formatMoney(pocket.monthlyRemaining, currency)}` : 'Đã góp đủ'}
+              <>
+                <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
+                  {fundPockets.map((pocket) => {
+                    const hasTarget = Number(pocket.monthlyTarget || 0) > 0;
+                    const progress = hasTarget ? pocket.monthlyPercentage : 0;
+                    return (
+                      <div key={pocket.id} className="rounded-[10px] border border-white/75 bg-white/55 px-2.5 py-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: pocket.color }} />
+                          <span className="min-w-0 flex-1 truncate text-[11px] font-normal text-ink/65">{pocket.name}</span>
+                          <span className="shrink-0 text-[10px] font-normal text-ink">
+                            {hasTarget
+                              ? `${formatMoney(pocket.monthlyContributed, currency)} / ${formatMoney(pocket.monthlyTarget, currency)}`
+                              : formatMoney(pocket.balance, currency)}
                           </span>
                         </div>
-                      ) : (
-                        <div className="mt-1.5 text-[9px] font-normal text-ink/30">Chưa đặt chỉ tiêu nạp quỹ</div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-ink/[0.07]">
+                          <div
+                            className={`h-full rounded-full transition-[width] duration-500 ${pocket.monthlyRemaining > 0 ? 'bg-coral' : 'bg-forest'}`}
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                        {hasTarget ? (
+                          <div className="mt-1.5 flex items-center justify-between text-[9px] font-normal text-ink/42">
+                            <span>Đã góp {formatMoney(pocket.monthlyContributed, currency)}</span>
+                            <span className={pocket.monthlyRemaining > 0 ? 'text-coral' : 'text-forest'}>
+                              {pocket.monthlyRemaining > 0 ? `Còn thiếu ${formatMoney(pocket.monthlyRemaining, currency)}` : 'Đã góp đủ'}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="mt-1.5 text-[9px] font-normal text-ink/30">Chưa đặt chỉ tiêu nạp quỹ</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-2.5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/fund-plans')}
+                    className="inline-flex items-center gap-1 text-[10px] font-medium text-forest/75 transition hover:text-forest hover:underline"
+                  >
+                    <span>Xem chi tiết kế hoạch</span>
+                    <ChevronRight className="size-3" />
+                  </button>
+                </div>
+              </>
             ) : (
               <p className="mt-3 rounded-[10px] border border-white/70 bg-white/45 px-3 py-4 text-center text-[10px] font-normal text-ink/38">
                 Chưa có danh mục nào được thiết lập nạp quỹ trong tháng này.
