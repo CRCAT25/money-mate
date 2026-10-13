@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import api, { errorMessage } from '../utils/api.js';
-import { baseDataStorage, pageCacheStorage, sessionStorage } from '../utils/storage.js';
+import { baseDataStorage, homeCacheStorage, pageCacheStorage, sessionStorage } from '../utils/storage.js';
 import { useAuth } from './AuthContext.jsx';
 import { useToast } from './ToastContext.jsx';
 
@@ -29,11 +29,16 @@ export function FamilyProvider({ children }) {
     cacheGeneration.current += 1;
     pageCache.current.clear();
     pageRequests.current.clear();
+    pageCacheStorage.clear();
+    homeCacheStorage.clear();
   }, []);
 
   const invalidatePageCache = useCallback(() => {
     cacheGeneration.current += 1;
+    pageCache.current.clear();
     pageRequests.current.clear();
+    pageCacheStorage.clear();
+    homeCacheStorage.clear();
   }, []);
 
   const bumpRevision = useCallback(() => {
@@ -203,10 +208,10 @@ export function FamilyProvider({ children }) {
   const loadCache = useCallback((key, loader) => {
     const keyForSpace = scopedKey(key);
     const currentRevision = revisionRef.current;
-    const cached = pageCache.current.get(keyForSpace) || pageCacheStorage.get(activeSpaceId, key);
-    if (cached?.revision === currentRevision) {
-      pageCache.current.set(keyForSpace, cached);
-      return Promise.resolve(cached);
+    // Only in-memory pageCache for the current active session revision is considered clean without revalidation
+    const memory = pageCache.current.get(keyForSpace);
+    if (memory && memory.revision === currentRevision) {
+      return Promise.resolve(memory);
     }
 
     const requestKey = `${currentRevision}:${keyForSpace}`;
@@ -229,7 +234,7 @@ export function FamilyProvider({ children }) {
       });
     pageRequests.current.set(requestKey, request);
     return request;
-  }, [revision, scopedKey, activeSpaceId]);
+  }, [scopedKey, activeSpaceId]);
 
   const loadFund = useCallback((month) => {
     if (activeSpace?.type !== 'family') return Promise.resolve(null);

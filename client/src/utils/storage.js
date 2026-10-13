@@ -63,9 +63,21 @@ export const spaceStorage = {
   },
 };
 
-const HOME_CACHE_PREFIX = 'moneymate.home.';
-const PAGE_CACHE_PREFIX = 'moneymate.page.';
-const BASE_DATA_PREFIX = 'moneymate.base.';
+const HOME_CACHE_PREFIX = 'moneymate.home.v2.';
+const PAGE_CACHE_PREFIX = 'moneymate.page.v2.';
+const BASE_DATA_PREFIX = 'moneymate.base.v2.';
+
+// Purge any legacy unversioned caches
+try {
+  Object.keys(localStorage).forEach((key) => {
+    if (
+      (key.startsWith('moneymate.home.') || key.startsWith('moneymate.page.') || key.startsWith('moneymate.base.')) &&
+      !key.includes('.v2.')
+    ) {
+      localStorage.removeItem(key);
+    }
+  });
+} catch {}
 
 export const homeCacheStorage = {
   get: (spaceId, month) => {
