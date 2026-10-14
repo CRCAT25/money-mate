@@ -10,6 +10,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import api, { errorMessage } from '../utils/api.js';
 import { visibleFundPockets } from '../utils/fund.js';
 import { formatInputAmount } from '../utils/formatters.js';
+import { resolveCategorySuggestions } from '../utils/categorySuggestions.js';
 
 const localToday = () => {
   const now = new Date();
@@ -76,6 +77,11 @@ export default function TransactionForm() {
   }, []);
 
   const filteredCategories = useMemo(() => categories.filter((item) => item.type === form.type), [categories, form.type]);
+  const selectedCategory = useMemo(() => categories.find((item) => item.id === form.categoryId), [categories, form.categoryId]);
+  const currentCategorySuggestions = useMemo(() => {
+    if (!selectedCategory) return [];
+    return resolveCategorySuggestions(selectedCategory);
+  }, [selectedCategory]);
   useEffect(() => {
     if (!transactionId && !contributionId) return;
     const endpoint = contributionId ? `/fund/contributions/${contributionId}` : `/transactions/${transactionId}`;
@@ -382,7 +388,23 @@ export default function TransactionForm() {
           }}
           className={`${keypadOpen && isMobile ? 'pb-[calc(430px+env(safe-area-inset-bottom))]' : 'pb-[calc(136px+env(safe-area-inset-bottom))]'} lg:pb-0`}
         >
+          {!isPersonal && !transactionId && !contributionId && (
+            <div className="border-b border-ink/[0.07] px-4 py-2.5 sm:px-6">
+              <div className="flex items-center justify-between gap-3 rounded-[12px] border border-ink/[0.06] bg-mint/25 p-2.5">
+                <div className="min-w-0">
+                  <div className="text-[12px] font-medium text-ink">{mode === 'expense' ? 'Loại khoản chi' : 'Loại khoản thu'}</div>
+                  <p className="mt-0.5 truncate text-[9px] font-normal text-ink/38">{mode === 'expense' ? 'Chi thông thường hoặc thanh toán bằng quỹ' : 'Thu nhập thực tế hoặc nạp tiền vào quỹ'}</p>
+                </div>
+                <div className="grid shrink-0 grid-cols-2 rounded-[10px] bg-ink/[0.05] p-0.5">
+                  <SourceButton active={entryKind === 'regular'} onClick={() => changeEntryKind('regular')} tone={mode}>{mode === 'expense' ? 'Chi tiêu bình thường' : 'Thu bình thường'}</SourceButton>
+                  <SourceButton active={entryKind === 'fund'} onClick={() => changeEntryKind('fund')} tone={mode}>{mode === 'expense' ? 'Chi tiêu quỹ' : 'Nạp vào quỹ'}</SourceButton>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="divide-y divide-ink/[0.07] px-4 sm:px-6">
+            {/* 1. Ngày */}
             <div className="grid min-h-[54px] grid-cols-[70px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[112px_minmax(0,1fr)]">
               <span className="text-[13px] font-medium text-ink/68 sm:text-sm">Ngày</span>
               <div className="grid grid-cols-[34px_minmax(0,1fr)_34px] items-center gap-1">
@@ -399,11 +421,123 @@ export default function TransactionForm() {
               </div>
             </div>
 
-            <label className="grid min-h-[52px] grid-cols-[70px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[112px_minmax(0,1fr)]">
-              <span className="text-[13px] font-medium text-ink/68 sm:text-sm">Ghi chú</span>
-              <input className="min-h-10 min-w-0 bg-transparent px-2 text-[13px] font-normal text-ink outline-none placeholder:text-ink/25 sm:text-sm" maxLength="240" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="Chưa nhập" />
-            </label>
+            {/* 2. Danh mục (Chọn danh mục trước) */}
+            {showFundContributionFields ? (
+              <div className="py-3.5 sm:py-4">
+                <div className="mb-3 flex items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 text-[14px] font-medium text-ink"><Landmark className="size-4 text-forest" /> Danh mục nạp quỹ</div>
+                    <p className="mt-0.5 text-[10px] font-normal text-ink/38">{isContributionEdit && contributionOwner ? `Khoản nạp của ${contributionOwner.displayName}` : 'Chọn mục nhận tiền'}</p>
+                  </div>
+                  <button type="button" onClick={() => navigate('/fund-plans')} className="min-h-8 shrink-0 rounded-[9px] border border-ink/[0.07] bg-white/55 px-2.5 text-[10px] font-medium text-forest transition active:scale-[0.98]">Quản lý quỹ</button>
+                </div>
+                <FundPocketGrid pockets={selectableFundPockets} value={form.fundPocketId} onChange={(fundPocketId) => setForm((current) => ({ ...current, fundPocketId }))} currency={family.currency} userId={user.id} />
+                <p className="mt-2 text-[9px] font-normal text-ink/32">Tiền được ghi nhận cho tài khoản đang đăng nhập và không cộng vào thu nhập thực tế.</p>
+              </div>
+            ) : (
+              <div className="py-3 sm:py-4">
+                {isFundExpense && (
+                  <div className="mb-3 rounded-[12px] border border-ink/[0.06] bg-mint/25 p-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-[12px] font-medium text-ink"><Landmark className="size-3.5 text-forest" /> Chọn quỹ thanh toán</div>
+                      <button
+                        type="button"
+                        onClick={() => setTransferOpen(true)}
+                        className="flex items-center gap-1 rounded-[8px] border border-forest/20 bg-white/70 px-2 py-1 text-[10px] font-medium text-forest transition hover:bg-white active:scale-95"
+                      >
+                        <ArrowLeftRight className="size-3" /> Chuyển quỹ
+                      </button>
+                    </div>
+                    <p className="mt-0.5 text-[9px] font-normal text-ink/38">Số dư có thể thanh toán {formatInputAmount(fund?.balance || 0) || '0'} {currencySymbol(family.currency)}</p>
+                    {spendablePockets.length ? (
+                      <PocketSelector pockets={spendablePockets} value={form.fundPocketId} onChange={(fundPocketId) => setForm((current) => ({ ...current, fundPocketId, paidFromFund: true }))} currency={family.currency} compact />
+                    ) : <p className="mt-2.5 rounded-[9px] bg-white/50 px-3 py-2.5 text-center text-[10px] font-normal text-coral">Quỹ chưa có số dư để thanh toán.</p>}
+                    {fundExpenseExceedsBalance && <p className="mt-2 text-[9px] font-normal text-coral">Số tiền đang lớn hơn số dư của {selectedPocket.name}.</p>}
+                  </div>
+                )}
 
+                <div className="mb-2.5 flex items-center justify-between">
+                  <div>
+                    <p className="text-[14px] font-semibold text-ink sm:text-[15px]">Danh mục</p>
+                    <p className="mt-0.5 text-[10px] font-normal text-ink/38">Chọn mục phù hợp với giao dịch</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/categories')}
+                    className="flex items-center gap-1 rounded-lg border border-ink/[0.08] bg-white/70 px-2.5 py-1 text-[11px] font-medium text-forest transition hover:bg-white active:scale-95"
+                  >
+                    <Grid2X2 className="size-3.5" />
+                    Quản lý danh mục
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5 lg:grid-cols-6">
+                  {filteredCategories.map((category) => {
+                    const active = form.categoryId === category.id;
+                    return (
+                      <button
+                        key={category.id}
+                        type="button"
+                        onClick={() => setForm({ ...form, categoryId: category.id })}
+                        className={`relative flex min-h-[64px] min-w-0 flex-col items-center justify-center gap-1 rounded-[10px] border px-1 py-1.5 text-[10px] font-medium text-ink transition active:scale-[0.98] ${active ? mode === 'income' ? 'border-forest/35 bg-forest/[0.06] shadow-sm' : 'border-coral/45 bg-coral/[0.07] shadow-sm' : 'border-ink/[0.08] bg-white/45 hover:border-ink/15 hover:bg-white'}`}
+                      >
+                        {active && <span className="absolute right-1.5 top-1.5 grid size-3.5 place-items-center rounded-full bg-ink text-white"><Check className="size-2.5" strokeWidth={3} /></span>}
+                        <span className="grid size-7 place-items-center rounded-lg" style={{ backgroundColor: `${category.color}14`, color: category.color }}>
+                          <CategoryIcon name={category.icon} className="size-4" strokeWidth={2.1} />
+                        </span>
+                        <span className="w-full truncate text-center">{category.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 3. Ghi chú & Thẻ gợi ý sub-menu */}
+            <div className="py-2.5 sm:py-3">
+              <label className="grid min-h-[46px] grid-cols-[70px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[112px_minmax(0,1fr)]">
+                <span className="text-[13px] font-medium text-ink/68 sm:text-sm">Ghi chú</span>
+                <input
+                  className="min-h-10 min-w-0 bg-transparent px-2 text-[13px] font-normal text-ink outline-none placeholder:text-ink/25 sm:text-sm"
+                  maxLength="240"
+                  value={form.note}
+                  onChange={(event) => setForm({ ...form, note: event.target.value })}
+                  placeholder={currentCategorySuggestions.length ? 'Nhập ghi chú hoặc chọn nhanh gợi ý bên dưới' : 'Chưa nhập'}
+                />
+              </label>
+
+              {currentCategorySuggestions.length > 0 && (
+                <div className="mt-1 flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 no-scrollbar pl-[70px] sm:pl-[112px]">
+                  <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-ink/35 mr-0.5">Gợi ý:</span>
+                  {currentCategorySuggestions.map((suggestion) => {
+                    const active = form.note === suggestion;
+                    return (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => {
+                          setForm((current) => ({
+                            ...current,
+                            note: current.note === suggestion ? '' : suggestion,
+                          }));
+                        }}
+                        className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-[11px] font-medium transition active:scale-95 ${
+                          active
+                            ? mode === 'income'
+                              ? 'bg-forest text-white shadow-xs'
+                              : 'bg-coral text-white shadow-xs'
+                            : 'border border-ink/[0.08] bg-white/75 text-ink/70 hover:border-ink/20 hover:bg-white hover:text-ink'
+                        }`}
+                      >
+                        {suggestion}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 4. Tiền chi / Tiền thu */}
             <div className="grid min-h-[56px] grid-cols-[70px_minmax(0,1fr)] items-start gap-2 py-2 sm:grid-cols-[112px_minmax(0,1fr)] sm:py-2.5">
               <span className="pt-2 text-[13px] font-medium text-ink/68 sm:text-sm">{form.type === 'expense' ? 'Tiền chi' : incomeLabel}</span>
               <div className="flex min-w-0 items-start gap-2">
@@ -511,93 +645,6 @@ export default function TransactionForm() {
               </div>
             </div>
           </div>
-
-          {!isPersonal && !transactionId && !contributionId && (
-            <div className="px-4 pt-3 sm:px-6">
-              <div className="flex items-center justify-between gap-3 rounded-[12px] border border-ink/[0.06] bg-mint/25 p-2.5">
-                <div className="min-w-0">
-                  <div className="text-[12px] font-medium text-ink">{mode === 'expense' ? 'Loại khoản chi' : 'Loại khoản thu'}</div>
-                  <p className="mt-0.5 truncate text-[9px] font-normal text-ink/38">{mode === 'expense' ? 'Chi thông thường hoặc thanh toán bằng quỹ' : 'Thu nhập thực tế hoặc nạp tiền vào quỹ'}</p>
-                </div>
-                <div className="grid shrink-0 grid-cols-2 rounded-[10px] bg-ink/[0.05] p-0.5">
-                  <SourceButton active={entryKind === 'regular'} onClick={() => changeEntryKind('regular')} tone={mode}>{mode === 'expense' ? 'Chi tiêu bình thường' : 'Thu bình thường'}</SourceButton>
-                  <SourceButton active={entryKind === 'fund'} onClick={() => changeEntryKind('fund')} tone={mode}>{mode === 'expense' ? 'Chi tiêu quỹ' : 'Nạp vào quỹ'}</SourceButton>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {showFundContributionFields ? (
-            <div className="px-4 pb-5 pt-4 sm:px-6 sm:pb-6">
-              <div>
-                <div className="mb-3 flex items-end justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 text-[14px] font-medium text-ink"><Landmark className="size-4 text-forest" /> Danh mục nạp quỹ</div>
-                    <p className="mt-0.5 text-[10px] font-normal text-ink/38">{isContributionEdit && contributionOwner ? `Khoản nạp của ${contributionOwner.displayName}` : 'Chọn mục nhận tiền'}</p>
-                  </div>
-                  <button type="button" onClick={() => navigate('/fund-plans')} className="min-h-8 shrink-0 rounded-[9px] border border-ink/[0.07] bg-white/55 px-2.5 text-[10px] font-medium text-forest transition active:scale-[0.98]">Quản lý quỹ</button>
-                </div>
-                <FundPocketGrid pockets={selectableFundPockets} value={form.fundPocketId} onChange={(fundPocketId) => setForm((current) => ({ ...current, fundPocketId }))} currency={family.currency} userId={user.id} />
-                <p className="mt-2.5 text-[9px] font-normal text-ink/32">Tiền được ghi nhận cho tài khoản đang đăng nhập và không cộng vào thu nhập thực tế.</p>
-              </div>
-            </div>
-          ) : (
-            <div className="px-4 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-5">
-              {isFundExpense && (
-                <div className="mb-4 rounded-[12px] border border-ink/[0.06] bg-mint/25 p-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 text-[12px] font-medium text-ink"><Landmark className="size-3.5 text-forest" /> Chọn quỹ thanh toán</div>
-                    <button
-                      type="button"
-                      onClick={() => setTransferOpen(true)}
-                      className="flex items-center gap-1 rounded-[8px] border border-forest/20 bg-white/70 px-2 py-1 text-[10px] font-medium text-forest transition hover:bg-white active:scale-95"
-                    >
-                      <ArrowLeftRight className="size-3" /> Chuyển quỹ
-                    </button>
-                  </div>
-                  <p className="mt-0.5 text-[9px] font-normal text-ink/38">Số dư có thể thanh toán {formatInputAmount(fund?.balance || 0) || '0'} {currencySymbol(family.currency)}</p>
-                  {spendablePockets.length ? (
-                    <PocketSelector pockets={spendablePockets} value={form.fundPocketId} onChange={(fundPocketId) => setForm((current) => ({ ...current, fundPocketId, paidFromFund: true }))} currency={family.currency} compact />
-                  ) : <p className="mt-2.5 rounded-[9px] bg-white/50 px-3 py-2.5 text-center text-[10px] font-normal text-coral">Quỹ chưa có số dư để thanh toán.</p>}
-                  {fundExpenseExceedsBalance && <p className="mt-2 text-[9px] font-normal text-coral">Số tiền đang lớn hơn số dư của {selectedPocket.name}.</p>}
-                </div>
-              )}
-
-              <div className="mb-3">
-                <p className="text-[15px] font-semibold text-ink">Danh mục</p>
-                <p className="mt-0.5 text-[10px] font-normal text-ink/38">Chọn mục phù hợp với giao dịch</p>
-              </div>
-
-              <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5 lg:grid-cols-6">
-                {filteredCategories.map((category) => {
-                  const active = form.categoryId === category.id;
-                  return (
-                    <button
-                      key={category.id}
-                      type="button"
-                      onClick={() => setForm({ ...form, categoryId: category.id })}
-                      className={`relative flex min-h-[64px] min-w-0 flex-col items-center justify-center gap-1 rounded-[10px] border px-1 py-1.5 text-[10px] font-medium text-ink transition active:scale-[0.98] ${active ? mode === 'income' ? 'border-forest/35 bg-forest/[0.06] shadow-sm' : 'border-coral/45 bg-coral/[0.07] shadow-sm' : 'border-ink/[0.08] bg-white/45 hover:border-ink/15 hover:bg-white'}`}
-                    >
-                      {active && <span className="absolute right-1.5 top-1.5 grid size-3.5 place-items-center rounded-full bg-ink text-white"><Check className="size-2.5" strokeWidth={3} /></span>}
-                      <span className="grid size-7 place-items-center rounded-lg" style={{ backgroundColor: `${category.color}14`, color: category.color }}>
-                        <CategoryIcon name={category.icon} className="size-4" strokeWidth={2.1} />
-                      </span>
-                      <span className="w-full truncate text-center">{category.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                type="button"
-                className="mt-2.5 flex min-h-9 w-full items-center justify-center gap-1.5 rounded-[10px] border border-ink/[0.07] bg-white/45 px-3 text-[11px] font-medium text-forest transition active:scale-[0.99] hover:bg-mint/55"
-                onClick={() => navigate('/categories')}
-              >
-                <Grid2X2 className="size-3.5" />
-                Quản lý danh mục
-              </button>
-            </div>
-          )}
 
           <div className={`${keypadOpen && isMobile ? 'hidden' : 'fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom))]'} z-30 border-t border-ink/[0.07] bg-paper/95 px-4 py-2 shadow-[0_-8px_22px_rgba(32,49,44,0.07)] backdrop-blur-xl lg:static lg:border-t lg:bg-transparent lg:px-6 lg:pb-5 lg:pt-0 lg:shadow-none`}>
             <button className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-[12px] px-5 text-[13px] font-semibold text-white shadow-md transition active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50 ${mode === 'income' ? 'bg-forest shadow-forest/20 hover:bg-[#315f54]' : 'bg-coral shadow-coral/20 hover:bg-[#d9634b]'}`} disabled={submitDisabled}>

@@ -31,19 +31,26 @@ router.post(
     body('type').isIn(['expense', 'income']).withMessage('Loại danh mục không hợp lệ.'),
     body('icon').trim().notEmpty().withMessage('Vui lòng chọn biểu tượng.'),
     body('color').matches(/^#[0-9A-F]{6}$/i).withMessage('Màu sắc không hợp lệ.'),
+    body('subcategories').optional(),
   ],
   validate,
   async (req, res, next) => {
     try {
       const category = { id: id(), ...req.body };
+      const subcategoriesJson = normalizeSubcategories(req.body.subcategories);
       await getDb().prepare(`
-        INSERT INTO categories (id, family_id, name, type, icon, color)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(category.id, req.space.id, category.name.trim(), category.type, category.icon, category.color);
+        INSERT INTO categories (id, family_id, name, type, icon, color, subcategories)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(category.id, req.space.id, category.name.trim(), category.type, category.icon, category.color, subcategoriesJson);
       if (req.space.type === 'family' && category.type === 'expense') await ensureExpenseFundPockets(getDb(), req.space.id);
       await bumpFamilyRevision(getDb(), req.space.id, { base: true, transactions: true });
       emitFamily(req.space.id, 'categories:changed');
-      res.status(201).json({ ...category, isDefault: false, transactionCount: 0 });
+      res.status(201).json({
+        ...category,
+        subcategories: subcategoriesJson ? JSON.parse(subcategoriesJson) : [],
+        isDefault: false,
+        transactionCount: 0,
+      });
     } catch (error) {
       if (isUniqueError(error)) return res.status(409).json({ message: 'Danh mục này đã tồn tại.' });
       next(error);
@@ -58,14 +65,24 @@ router.patch(
     body('name').trim().isLength({ min: 1, max: 40 }),
     body('icon').trim().notEmpty(),
     body('color').matches(/^#[0-9A-F]{6}$/i),
+    body('subcategories').optional(),
   ],
   validate,
   async (req, res, next) => {
     try {
-      const result = await getDb().prepare(`
-        UPDATE categories SET name = ?, icon = ?, color = ?
-        WHERE id = ? AND family_id = ?
-      `).run(req.body.name.trim(), req.body.icon, req.body.color, req.params.id, req.space.id);
+      const subcategoriesJson = req.body.subcategories !== undefined
+        ? normalizeSubcategories(req.body.subcategories)
+        : null;
+      const updateWithSubcategories = req.body.subcategories !== undefined;
+      const result = updateWithSubcategories
+        ? await getDb().prepare(`
+            UPDATE categories SET name = ?, icon = ?, color = ?, subcategories = ?
+            WHERE id = ? AND family_id = ?
+          `).run(req.body.name.trim(), req.body.icon, req.body.color, subcategoriesJson, req.params.id, req.space.id)
+        : await getDb().prepare(`
+            UPDATE categories SET name = ?, icon = ?, color = ?
+            WHERE id = ? AND family_id = ?
+          `).run(req.body.name.trim(), req.body.icon, req.body.color, req.params.id, req.space.id);
       if (!result.changes) return res.status(404).json({ message: 'Không tìm thấy danh mục.' });
       if (req.space.type === 'family') await ensureExpenseFundPockets(getDb(), req.space.id);
       await bumpFamilyRevision(getDb(), req.space.id, { base: true, transactions: true });
@@ -104,15 +121,47 @@ router.delete('/:id', [param('id').isUUID()], validate, async (req, res) => {
 });
 
 function mapCategory(category) {
+  let subcategories = [];
+  if (category.subcategories) {
+    try {
+      const parsed = JSON.parse(category.subcategories);
+      if (Array.isArray(parsed)) subcategories = parsed;
+    } catch {}
+  }
   return {
     id: category.id,
     name: category.name,
     type: category.type,
     icon: category.icon,
     color: category.color,
+    subcategories,
     isDefault: Boolean(category.is_default),
     transactionCount: Number(category.transaction_count),
   };
+}
+
+function normalizeSubcategories(raw) {
+  if (!raw) return null;
+  let list = [];
+  if (Array.isArray(raw)) {
+    list = raw;
+  } else if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) list = parsed;
+      else list = raw.split(/[,;\n]/);
+    } catch {
+      list = raw.split(/[,;\n]/);
+    }
+  }
+  const cleaned = Array.from(
+    new Set(
+      list
+        .map((item) => (typeof item === 'string' ? item.trim() : ''))
+        .filter((item) => item.length > 0 && item.length <= 50)
+    )
+  ).slice(0, 30);
+  return cleaned.length ? JSON.stringify(cleaned) : null;
 }
 
 function isUniqueError(error) {

@@ -475,8 +475,9 @@ test('category and transaction CRUD preserve family data rules', async () => {
   const createdCategory = await request(app)
     .post('/api/categories')
     .set(auth)
-    .send({ name: 'Thú cưng', type: 'expense', icon: 'PawPrint', color: '#4A8F8B' })
+    .send({ name: 'Thú cưng', type: 'expense', icon: 'PawPrint', color: '#4A8F8B', subcategories: ['Thức ăn', 'Khám thú y', 'Cắt tỉa lông'] })
     .expect(201);
+  assert.deepEqual(createdCategory.body.subcategories, ['Thức ăn', 'Khám thú y', 'Cắt tỉa lông']);
   const fundAfterCategoryCreate = await request(app).get('/api/fund').set(auth).expect(200);
   const linkedPocket = fundAfterCategoryCreate.body.pockets.find(
     (pocket) => pocket.category?.id === createdCategory.body.id,
@@ -488,8 +489,11 @@ test('category and transaction CRUD preserve family data rules', async () => {
   await request(app)
     .patch(`/api/categories/${createdCategory.body.id}`)
     .set(auth)
-    .send({ name: 'Chăm thú cưng', icon: 'HeartPulse', color: '#E56B78' })
+    .send({ name: 'Chăm thú cưng', icon: 'HeartPulse', color: '#E56B78', subcategories: ['Thức ăn', 'Khám thú y', 'Cắt tỉa lông', 'Đồ chơi'] })
     .expect(200);
+  const categoriesList = await request(app).get('/api/categories').set(auth).expect(200);
+  const foundUpdatedCat = categoriesList.body.find((c) => c.id === createdCategory.body.id);
+  assert.deepEqual(foundUpdatedCat.subcategories, ['Thức ăn', 'Khám thú y', 'Cắt tỉa lông', 'Đồ chơi']);
   const fundAfterCategoryUpdate = await request(app).get('/api/fund').set(auth).expect(200);
   const updatedLinkedPocket = fundAfterCategoryUpdate.body.pockets.find(
     (pocket) => pocket.category?.id === createdCategory.body.id,
@@ -829,9 +833,10 @@ test('family fund tracks member contributions and fund-paid expenses independent
 
   // Checking personal spaces got the refund income transactions
   const personal = ownerLogin.body.spaces.find((space) => space.type === 'personal');
+  const personalAuth = { ...ownerAuth, 'X-MoneyMate-Space-Id': personal.id };
   const currentMonthStr = new Date().toISOString().slice(0, 7);
   const personalTxns = await request(app).get(`/api/transactions?month=${currentMonthStr}`).set(personalAuth).expect(200);
-  const refundTxn = personalTxns.body.transactions.find((t) => t.type === 'income' && t.note?.includes('Hoàn tiền dư quỹ'));
+  const refundTxn = personalTxns.body.find((t) => t.type === 'income' && t.note?.includes('Hoàn tiền dư quỹ'));
   assert.ok(refundTxn);
   assert.equal(refundTxn.amount, 250000);
 

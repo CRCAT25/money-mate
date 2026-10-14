@@ -381,6 +381,7 @@ async function migrateV1(db) {
       icon TEXT NOT NULL,
       color TEXT NOT NULL,
       is_default INTEGER NOT NULL DEFAULT 0,
+      subcategories TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(family_id, name, type),
       FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE
@@ -590,6 +591,7 @@ async function migrateV1(db) {
       ON push_subscriptions(user_id);
   `);
   await ensureFamilyColumns(db);
+  await ensureCategoryColumns(db);
   await ensureFundPocketColumns(db);
   await ensureTransactionColumns(db);
   await ensureFundContributionColumns(db);
@@ -650,6 +652,19 @@ async function ensureFamilyColumns(db) {
     db.sqlite.exec('ALTER TABLE families ADD COLUMN show_shopping_plan INTEGER NOT NULL DEFAULT 1');
   }
   db.sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_families_personal_owner ON families(owner_user_id) WHERE space_type = 'personal'");
+}
+
+async function ensureCategoryColumns(db) {
+  if (db.kind === 'postgres') {
+    await db.sql.unsafe('ALTER TABLE categories ADD COLUMN IF NOT EXISTS subcategories TEXT');
+    return;
+  }
+
+  const columns = db.sqlite.prepare('PRAGMA table_info(categories)').all();
+  const names = new Set(columns.map((column) => column.column_name || column.name));
+  if (!names.has('subcategories')) {
+    db.sqlite.exec('ALTER TABLE categories ADD COLUMN subcategories TEXT');
+  }
 }
 
 async function ensureTransactionColumns(db) {
