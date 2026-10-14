@@ -263,7 +263,6 @@ export default function FundPlans() {
             onTransfer={() => setTransferOpen(true)}
             onSettle={() => setSettleOpen(true)}
             fundSurplusMode={fundSurplusMode}
-            rolloverOffsetPerMember={rolloverOffsetPerMember}
             isOwner={isOwner}
           />
           <FundPlanOverview pockets={pockets} currency={family.currency} onEdit={openEditor} />
@@ -350,7 +349,7 @@ export default function FundPlans() {
   );
 }
 
-function FundPlanSummary({ totals, balance = 0, currency, onTransfer, onSettle, fundSurplusMode, rolloverOffsetPerMember, isOwner }) {
+function FundPlanSummary({ totals, balance = 0, currency, onTransfer, onSettle, fundSurplusMode, isOwner }) {
   const percentage = totals.target > 0 ? Math.min(100, (totals.contributed / totals.target) * 100) : 0;
   const progressTone = totals.remaining > 0 ? 'bg-coral' : 'bg-forest';
   return (
@@ -379,14 +378,17 @@ function FundPlanSummary({ totals, balance = 0, currency, onTransfer, onSettle, 
       </div>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink/[0.09]"><span className={`block h-full rounded-full transition-[width] duration-700 ease-out ${progressTone}`} style={{ width: `${percentage}%` }} /></div>
       <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-normal text-ink/38">
-        <span>Đã nạp: <strong className="font-normal text-ink/62">{formatMoney(totals.contributed, currency)}</strong></span>
-        {fundSurplusMode === 'rollover' && rolloverOffsetPerMember > 0 ? (
-          <span className="text-right text-forest font-medium">
-            Đã cấn trừ {formatMoney(rolloverOffsetPerMember, currency)}/người từ dư quỹ
-          </span>
-        ) : (
-          <span className="text-right">Còn thiếu: <strong className="font-normal text-coral">{formatMoney(totals.remaining, currency)}</strong></span>
-        )}
+        <span>
+          Đã nạp: <strong className="font-normal text-ink/62">{formatMoney(totals.contributed, currency)}</strong>
+          {balance > 0 && <span className="ml-1 text-ink/35">· Số dư quỹ: {formatMoney(balance, currency)}</span>}
+        </span>
+        <span className="text-right">
+          {totals.remaining > 0 ? (
+            <>Còn thiếu: <strong className="font-normal text-coral">{formatMoney(totals.remaining, currency)}</strong></>
+          ) : (
+            <strong className="font-normal text-forest">Đã đủ kế hoạch</strong>
+          )}
+        </span>
       </div>
     </section>
   );
