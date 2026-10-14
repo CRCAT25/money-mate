@@ -133,7 +133,7 @@ function postgresQuery(source) {
     .replace(/\?/g, () => `$${++index}`);
 }
 
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 
 async function migrate(db) {
   let applied;
@@ -174,6 +174,10 @@ async function migrate(db) {
     await migrateV4(db);
     await recordSchemaVersion(db, 4);
   }
+  if (!applied.has(5)) {
+    await migrateV5(db);
+    await recordSchemaVersion(db, 5);
+  }
 }
 
 async function recordSchemaVersion(db, version) {
@@ -181,6 +185,21 @@ async function recordSchemaVersion(db, version) {
     await db.sql.unsafe('INSERT INTO schema_version (version) VALUES ($1) ON CONFLICT (version) DO NOTHING', [version]);
   } else {
     db.sqlite.exec(`INSERT OR IGNORE INTO schema_version (version) VALUES (${Number(version)})`);
+  }
+}
+
+// v5: subcategories support on categories table
+async function migrateV5(db) {
+  if (db.kind === 'postgres') {
+    await db.exec(`
+      ALTER TABLE categories ADD COLUMN IF NOT EXISTS subcategories TEXT;
+    `);
+  } else {
+    const tableInfo = db.sqlite.prepare("PRAGMA table_info('categories')").all();
+    const hasColumn = tableInfo.some((col) => col.name === 'subcategories');
+    if (!hasColumn) {
+      db.sqlite.exec("ALTER TABLE categories ADD COLUMN subcategories TEXT");
+    }
   }
 }
 
