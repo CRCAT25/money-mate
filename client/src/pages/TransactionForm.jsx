@@ -26,7 +26,7 @@ export default function TransactionForm() {
   const initialMode = requestedType === 'income' || requestedType === 'fund' ? 'income' : 'expense';
   const navigate = useNavigate();
   const { family, user } = useAuth();
-  const { categories, touch, loadFund, prefetchPages, loading: baseLoading, isPersonal } = useFamilyData();
+  const { categories, revision, touch, getCache, loadFund, prefetchPages, loading: baseLoading, isPersonal } = useFamilyData();
   const { notify } = useToast();
   const defaultEntryKind = family?.type === 'family' ? 'fund' : 'regular';
   const [form, setForm] = useState({
@@ -36,6 +36,7 @@ export default function TransactionForm() {
   const [mode, setMode] = useState(initialMode);
   const [entryKind, setEntryKind] = useState(requestedType === 'fund' ? 'fund' : defaultEntryKind);
   const [fund, setFund] = useState(null);
+  const [fundReady, setFundReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [contributionPocket, setContributionPocket] = useState(null);
   const [contributionOwner, setContributionOwner] = useState(null);
@@ -45,6 +46,8 @@ export default function TransactionForm() {
   const [keypadOpen, setKeypadOpen] = useState(false);
   const [keypadExpression, setKeypadExpression] = useState('');
   const amountInput = useRef(null);
+  const mobileAmountField = useRef(null);
+  const keypadSurface = useRef(null);
   const isContributionEdit = Boolean(contributionId);
   const [transferOpen, setTransferOpen] = useState(false);
 
@@ -75,6 +78,20 @@ export default function TransactionForm() {
     mediaQuery.addEventListener?.('change', handleViewportChange);
     return () => mediaQuery.removeEventListener?.('change', handleViewportChange);
   }, []);
+
+  const hasLiveCalculation = liveCalculationResult !== null;
+  useEffect(() => {
+    if (!keypadOpen || !isMobile) return undefined;
+    // Keep the amount field just above the on-screen keypad. offsetTop ignores the keypad's rise animation transform.
+    const frame = window.requestAnimationFrame(() => {
+      const field = mobileAmountField.current;
+      const keypad = keypadSurface.current;
+      if (!field || !keypad) return;
+      const overlap = field.getBoundingClientRect().bottom - (keypad.offsetTop - 12);
+      if (overlap > 0) window.scrollBy({ top: overlap, behavior: 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [keypadOpen, isMobile, hasLiveCalculation]);
 
   const filteredCategories = useMemo(() => categories.filter((item) => item.type === form.type), [categories, form.type]);
   const selectedCategory = useMemo(() => categories.find((item) => item.id === form.categoryId), [categories, form.categoryId]);
@@ -125,9 +142,8 @@ export default function TransactionForm() {
       return undefined;
     }
     let active = true;
-    loadFund(form.transactionDate.slice(0, 7)).then((entry) => {
-      if (!active) return;
-      const nextFund = entry?.data || null;
+    const month = form.transactionDate.slice(0, 7);
+    const applyFund = (nextFund) => {
       const nextPockets = visibleFundPockets(nextFund?.pockets);
       setFund(nextFund);
       setForm((current) => {
@@ -139,9 +155,19 @@ export default function TransactionForm() {
             || nextPockets[0];
         return { ...current, fundPocketId: preferred?.id || '' };
       });
-    }).catch(() => {});
+    };
+    // Show the last known balances immediately, then revalidate. `revision` changes after every save so balances refresh in place.
+    const cached = getCache(`fund:${month}`);
+    if (cached?.data) {
+      applyFund(cached.data);
+      setFundReady(true);
+    }
+    loadFund(month)
+      .then((entry) => { if (active) applyFund(entry?.data || null); })
+      .catch(() => {})
+      .finally(() => { if (active) setFundReady(true); });
     return () => { active = false; };
-  }, [entryKind, isPersonal, loadFund, form.transactionDate, mode]);
+  }, [entryKind, isPersonal, getCache, loadFund, form.transactionDate, mode, revision]);
 
   const changeMode = (nextMode) => {
     if (nextMode === mode) return;
@@ -237,7 +263,6 @@ export default function TransactionForm() {
         notify(data.message);
         touch();
         void prefetchPages(form.transactionDate.slice(0, 7));
-        loadFund(form.transactionDate.slice(0, 7)).then((entry) => setFund(entry?.data || null)).catch(() => {});
         setForm((current) => ({ ...current, amount: '', note: '' }));
         setKeypadExpression('');
         if (!isMobile) window.requestAnimationFrame(() => amountInput.current?.focus());
@@ -448,10 +473,14 @@ export default function TransactionForm() {
                         <ArrowLeftRight className="size-3" /> Chuyển quỹ
                       </button>
                     </div>
-                    <p className="mt-0.5 text-[9px] font-normal text-ink/38">Số dư có thể thanh toán {formatInputAmount(fund?.balance || 0) || '0'} {currencySymbol(family.currency)}</p>
+                    {fundReady ? (
+                      <p className="mt-0.5 text-[9px] font-normal text-ink/38">Số dư có thể thanh toán {formatInputAmount(fund?.balance || 0) || '0'} {currencySymbol(family.currency)}</p>
+                    ) : <Skeleton className="mt-1 h-2.5 w-36 rounded-md" />}
                     {spendablePockets.length ? (
                       <PocketSelector pockets={spendablePockets} value={form.fundPocketId} onChange={(fundPocketId) => setForm((current) => ({ ...current, fundPocketId, paidFromFund: true }))} currency={family.currency} compact />
-                    ) : <p className="mt-2.5 rounded-[9px] bg-white/50 px-3 py-2.5 text-center text-[10px] font-normal text-coral">Quỹ chưa có số dư để thanh toán.</p>}
+                    ) : fundReady
+                      ? <p className="mt-2.5 rounded-[9px] bg-white/50 px-3 py-2.5 text-center text-[10px] font-normal text-coral">Quỹ chưa có số dư để thanh toán.</p>
+                      : <div className="mt-2.5 grid grid-cols-2 gap-1.5"><Skeleton className="h-[46px] rounded-[10px]" /><Skeleton className="h-[46px] rounded-[10px]" /></div>}
                     {fundExpenseExceedsBalance && <p className="mt-2 text-[9px] font-normal text-coral">Số tiền đang lớn hơn số dư của {selectedPocket.name}.</p>}
                   </div>
                 )}
@@ -498,7 +527,7 @@ export default function TransactionForm() {
               <label className="grid min-h-[46px] grid-cols-[70px_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[112px_minmax(0,1fr)]">
                 <span className="text-[13px] font-medium text-ink/68 sm:text-sm">Ghi chú</span>
                 <input
-                  className="min-h-10 min-w-0 bg-transparent px-2 text-[13px] font-normal text-ink outline-none placeholder:text-ink/25 sm:text-sm"
+                  className="min-h-10 min-w-0 rounded-[10px] border border-ink/[0.08] bg-white/60 px-3 text-[13px] font-normal text-ink outline-none transition-colors placeholder:text-ink/25 focus:border-ink/15 focus:bg-white sm:text-sm"
                   maxLength="240"
                   value={form.note}
                   onChange={(event) => setForm({ ...form, note: event.target.value })}
@@ -507,32 +536,36 @@ export default function TransactionForm() {
               </label>
 
               {currentCategorySuggestions.length > 0 && (
-                <div className="mt-1 flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 no-scrollbar pl-[70px] sm:pl-[112px]">
-                  <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-ink/35 mr-0.5">Gợi ý:</span>
-                  {currentCategorySuggestions.map((suggestion) => {
-                    const active = form.note === suggestion;
-                    return (
-                      <button
-                        key={suggestion}
-                        type="button"
-                        onClick={() => {
-                          setForm((current) => ({
-                            ...current,
-                            note: current.note === suggestion ? '' : suggestion,
-                          }));
-                        }}
-                        className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-[11px] font-medium transition active:scale-95 ${
-                          active
-                            ? mode === 'income'
-                              ? 'bg-forest text-white shadow-xs'
-                              : 'bg-coral text-white shadow-xs'
-                            : 'border border-ink/[0.08] bg-white/75 text-ink/70 hover:border-ink/20 hover:bg-white hover:text-ink'
-                        }`}
-                      >
-                        {suggestion}
-                      </button>
-                    );
-                  })}
+                <div className="mt-1.5 grid grid-cols-[70px_minmax(0,1fr)] gap-2 sm:grid-cols-[112px_minmax(0,1fr)]">
+                  <span aria-hidden="true" />
+                  {/* pl-[13px] = input border (1px) + px-3, so "Gợi ý" lines up with the note text */}
+                  <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto pb-1 pl-[13px] pt-0.5 no-scrollbar">
+                    <span className="mr-0.5 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-ink/35">Gợi ý:</span>
+                    {currentCategorySuggestions.map((suggestion) => {
+                      const active = form.note === suggestion;
+                      return (
+                        <button
+                          key={suggestion}
+                          type="button"
+                          onClick={() => {
+                            setForm((current) => ({
+                              ...current,
+                              note: current.note === suggestion ? '' : suggestion,
+                            }));
+                          }}
+                          className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-[11px] font-medium transition active:scale-95 ${
+                            active
+                              ? mode === 'income'
+                                ? 'bg-forest text-white shadow-xs'
+                                : 'bg-coral text-white shadow-xs'
+                              : 'border border-ink/[0.08] bg-white/75 text-ink/70 hover:border-ink/20 hover:bg-white hover:text-ink'
+                          }`}
+                        >
+                          {suggestion}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -544,6 +577,7 @@ export default function TransactionForm() {
                 {isMobile ? (
                   <div className="relative min-w-0 flex-1">
                     <div
+                      ref={mobileAmountField}
                       role="button"
                       tabIndex={0}
                       onClick={() => setKeypadOpen(true)}
@@ -553,8 +587,8 @@ export default function TransactionForm() {
                           setKeypadOpen(true);
                         }
                       }}
-                      className={`money-input group relative flex min-h-9 w-full min-w-0 cursor-pointer flex-col justify-center rounded-[9px] bg-sun/12 px-2.5 py-1.5 transition-colors sm:min-h-10 ${
-                        keypadOpen ? 'ring-2 ring-forest/30 bg-sun/18' : 'hover:bg-sun/15'
+                      className={`money-input group relative flex min-h-9 w-full min-w-0 cursor-pointer flex-col justify-center rounded-[10px] border px-3 py-1.5 transition-colors sm:min-h-10 ${
+                        keypadOpen ? 'border-ink/15 bg-white' : 'border-ink/[0.08] bg-white/60 hover:bg-white'
                       }`}
                       aria-label={form.type === 'expense' ? 'Tiền chi' : incomeLabel}
                     >
@@ -630,7 +664,7 @@ export default function TransactionForm() {
                           }
                         }
                       }}
-                      className="money-input min-h-9 w-full min-w-0 resize-none rounded-[9px] bg-sun/12 px-2.5 py-1.5 text-[18px] font-normal tracking-[-0.02em] text-ink outline-none placeholder:text-ink/28 break-words [overflow-wrap:anywhere] leading-snug focus:ring-2 focus:ring-forest/30 sm:min-h-10 sm:text-xl"
+                      className="money-input min-h-9 w-full min-w-0 resize-none rounded-[10px] border border-ink/[0.08] bg-white/60 px-3 py-1.5 text-[18px] font-normal tracking-[-0.02em] text-ink outline-none transition-colors placeholder:text-ink/28 break-words [overflow-wrap:anywhere] leading-snug focus:border-ink/15 focus:bg-white sm:min-h-10 sm:text-xl"
                       placeholder="0"
                       aria-label={form.type === 'expense' ? 'Tiền chi' : incomeLabel}
                     />
@@ -646,30 +680,27 @@ export default function TransactionForm() {
             </div>
           </div>
 
-          <div className={`${keypadOpen && isMobile ? 'hidden' : 'fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom))]'} z-30 border-t border-ink/[0.07] bg-paper/95 px-4 py-2 shadow-[0_-8px_22px_rgba(32,49,44,0.07)] backdrop-blur-xl lg:static lg:border-t lg:bg-transparent lg:px-6 lg:pb-5 lg:pt-0 lg:shadow-none`}>
+          <div className={`${keypadOpen && isMobile ? 'hidden' : 'fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom))]'} z-30 border-t border-ink/[0.07] bg-paper/95 px-4 py-2 shadow-[0_-8px_22px_rgba(32,49,44,0.07)] backdrop-blur-xl lg:static lg:border-t lg:bg-transparent lg:px-6 lg:pb-5 lg:pt-4 lg:shadow-none`}>
             <button className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-[12px] px-5 text-[13px] font-semibold text-white shadow-md transition active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50 ${mode === 'income' ? 'bg-forest shadow-forest/20 hover:bg-[#315f54]' : 'bg-coral shadow-coral/20 hover:bg-[#d9634b]'}`} disabled={submitDisabled}>
               {submitting ? <LoaderCircle className="size-[18px] animate-spin" /> : <><Check className="size-[18px]" /> {transactionId || contributionId ? 'Lưu thay đổi' : isFundContribution ? `Nạp vào ${selectedPocket?.name || 'quỹ chung'}` : isFundExpense ? `Chi từ ${selectedPocket?.name || 'quỹ'}` : mode === 'expense' ? 'Nhập khoản chi' : 'Nhập khoản thu'}</>}
             </button>
           </div>
         </form>
       </section>
-      {isMobile && keypadOpen && <AmountKeypad onKey={handleKeypadKey} />}
+      {isMobile && keypadOpen && <AmountKeypad ref={keypadSurface} onKey={handleKeypadKey} />}
       <TransferFundModal
         open={transferOpen}
         onClose={() => setTransferOpen(false)}
         pockets={selectableFundPockets}
         currency={family.currency}
         defaultFromPocketId={form.fundPocketId || selectableFundPockets[0]?.id}
-        onSuccess={() => {
-          touch();
-          loadFund(form.transactionDate.slice(0, 7)).then((entry) => setFund(entry?.data || null)).catch(() => {});
-        }}
+        onSuccess={() => touch()}
       />
     </div>
   );
 }
 
-function AmountKeypad({ onKey }) {
+function AmountKeypad({ ref, onKey }) {
   const keys = [
     ['7', 'number'], ['8', 'number'], ['9', 'number'], ['/', 'operator'], ['AC', 'action'],
     ['4', 'number'], ['5', 'number'], ['6', 'number'], ['*', 'operator'], ['Del', 'delete'],
@@ -677,7 +708,7 @@ function AmountKeypad({ onKey }) {
     ['0', 'number'], ['00', 'number col-span-2'], ['+', 'operator'],
   ];
   return (
-    <section className="keypad-surface fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom))] z-50 rounded-t-[26px] border border-ink/[0.08] bg-white/95 px-3 pb-3 pt-3 shadow-[0_-12px_32px_rgba(32,49,44,0.16)] backdrop-blur-xl md:hidden">
+    <section ref={ref} className="keypad-surface fixed inset-x-0 bottom-[calc(76px+env(safe-area-inset-bottom))] z-50 rounded-t-[26px] border border-ink/[0.08] bg-white/95 px-3 pb-3 pt-3 shadow-[0_-12px_32px_rgba(32,49,44,0.16)] backdrop-blur-xl md:hidden">
       <div className="mx-auto mb-2.5 h-1 w-10 rounded-full bg-ink/15" />
       <div className="grid grid-cols-5 grid-rows-4 gap-2">
         {keys.map(([key, variant]) => (
