@@ -18,7 +18,7 @@ self.addEventListener('push', (event) => {
       return;
     }
 
-    await self.registration.showNotification(payload.title || 'Quản lý tài chính đa năng', {
+    await self.registration.showNotification(payload.title || 'MoneyMate - Quản lý tài chính đa năng', {
       body: payload.body,
       icon: payload.icon || '/icon-192.png',
       badge: payload.badge || '/icon-192.png',
@@ -44,10 +44,10 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 function readPayload(event) {
-  if (!event.data) return { type: 'transaction-created', title: 'Quản lý tài chính đa năng', body: 'Gia đình vừa có khoản chi mới.', url: '/' };
+  if (!event.data) return { type: 'transaction-created', title: 'MoneyMate - Quản lý tài chính đa năng', body: 'Gia đình vừa có khoản chi mới.', url: '/' };
   try {
     return event.data.json();
   } catch {
-    return { type: 'transaction-created', title: 'Quản lý tài chính đa năng', body: event.data.text(), url: '/' };
+    return { type: 'transaction-created', title: 'MoneyMate - Quản lý tài chính đa năng', body: event.data.text(), url: '/' };
   }
 }

@@ -89,7 +89,7 @@ export default function AppShell({ children }) {
         <div className="relative mb-8 flex items-center gap-2.5 px-2">
           <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-sun font-editorial text-xl font-bold text-ink">Q</div>
           <div className="min-w-0">
-            <div className="text-sm font-extrabold tracking-tight leading-snug">Quản lý tài chính đa năng</div>
+            <div className="text-sm font-extrabold tracking-tight leading-snug">MoneyMate - Quản lý tài chính đa năng</div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/45">Tài chính thông minh</div>
           </div>
         </div>

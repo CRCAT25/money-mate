@@ -79,7 +79,7 @@ function PlanVisibilityRoute({ setting, children }) {
 
 function LoadingScreen() {
   return (
-    <div aria-label="Đang tải Quản lý tài chính đa năng" className="min-h-[100dvh] bg-cream" role="status">
+    <div aria-label="Đang tải MoneyMate" className="min-h-[100dvh] bg-cream" role="status">
       <main className="mx-auto max-w-5xl space-y-7 px-4 pb-28 pt-6 sm:px-7 lg:pt-9">
         <div className="space-y-3"><Skeleton className="h-3 w-40" /><Skeleton className="h-11 w-72 max-w-full rounded-2xl" /></div>
         <Skeleton className="h-64 w-full rounded-[32px] bg-ink/10" />
@@ -146,7 +146,7 @@ function StartupSplash({ authLoading }) {
 
   return (
     <div
-      aria-label="Đang mở Quản lý tài chính đa năng"
+      aria-label="Đang mở MoneyMate"
       className={`startup-splash${leaving ? ' startup-splash--leaving' : ''}`}
       role="status"
     >
@@ -166,7 +166,7 @@ function StartupSplash({ authLoading }) {
         </div>
 
         <div className="startup-brand">
-          <div className="startup-brand__name">Quản lý tài chính đa năng</div>
+          <div className="startup-brand__name">MoneyMate - Quản lý tài chính đa năng</div>
           <div className="startup-brand__tagline">Quản lý tài chính thông minh</div>
         </div>
       </div>

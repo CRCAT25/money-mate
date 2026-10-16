@@ -37,7 +37,7 @@ export default function Signup() {
   }
 
   return (
-    <AuthLayout eyebrow="Bắt đầu với Quản lý tài chính đa năng" title="Một nơi cho mọi kế hoạch." description="Dùng riêng cho bản thân hoặc kết nối thêm không gian gia đình bất cứ lúc nào.">
+    <AuthLayout eyebrow="Bắt đầu với MoneyMate" title="Một nơi cho mọi kế hoạch." description="Dùng riêng cho bản thân hoặc kết nối thêm không gian gia đình bất cứ lúc nào.">
       <div className="mb-6 grid grid-cols-3 rounded-2xl bg-ink/[0.05] p-1.5">
         {[['personal', UserRound, 'Cá nhân'], ['create', UserRoundPlus, 'Tạo nhà'], ['join', Users, 'Tham gia']].map(([value, Icon, label]) => (
           <button key={value} type="button" onClick={() => setMode(value)} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-extrabold transition ${mode === value ? 'bg-white text-ink shadow-sm' : 'text-ink/45'}`}><Icon className="size-4" />{label}</button>
